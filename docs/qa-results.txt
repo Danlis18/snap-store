@@ -1,0 +1,75 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> snap-store@1.0.0 pretest
+> npm run build
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> snap-store@1.0.0 build
+> vite build
+
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 1747 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                              0.99 kB │ gzip:   0.59 kB
+dist/assets/manrope-vietnamese-wght-normal-usUDDRr7.woff2    8.52 kB
+dist/assets/manrope-greek-wght-normal-DL7QRZyv.woff2         9.44 kB
+dist/assets/manrope-cyrillic-wght-normal-Dvxsihut.woff2     14.50 kB
+dist/assets/manrope-latin-ext-wght-normal-Ch3YOpNY.woff2    15.12 kB
+dist/assets/manrope-latin-wght-normal-DHIcAJRg.woff2        24.84 kB
+dist/assets/index-CUhR8vqJ.css                              63.07 kB │ gzip:  16.10 kB
+dist/assets/RoundedBoxGeometry-CO5XGV8I.js                   1.75 kB │ gzip:   0.81 kB
+dist/assets/Account-Dt205F46.js                              7.79 kB │ gzip:   2.88 kB
+dist/assets/react-C6WxKkic.js                               11.32 kB │ gzip:   4.07 kB
+dist/assets/Checkout-Cgzh9Lwk.js                            11.98 kB │ gzip:   4.45 kB
+dist/assets/Studio-BXcaV1tG.js                              12.80 kB │ gzip:   5.47 kB
+dist/assets/Admin-BTYNCayM.js                               30.39 kB │ gzip:   8.63 kB
+dist/assets/index-C4QkaWqY.js                              252.29 kB │ gzip:  80.03 kB
+dist/assets/three-CpB-wl7P.js                              725.22 kB │ gzip: 187.10 kB
+
+(!) Some chunks are larger than 650 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 3.73s
+
+> snap-store@1.0.0 test
+> node --test tests/*.test.js
+
+✔ quantity discounts: 4/5/6/19/20/21 and integer rounding (1.512362ms)
+✔ only better promo applies; rewards capped after discount (0.255586ms)
+✔ free shipping threshold is evaluated after all discounts (0.1852ms)
+✔ invalid, unavailable, duplicated and demo variants cannot circumvent validation (0.537221ms)
+✔ expired/exhausted/minimum promos fail (0.377821ms)
+✔ stylist creates distinct complete available outfits within budget and respects style (202.12425ms)
+✔ 100 seeded products: 10 per brand, persisted and editable (557.460698ms)
+✔ CSRF, cross-origin requests and admin/user boundaries enforced (29.432782ms)
+✔ email code creates account, consumes OTP and keeps session private (89.750345ms)
+✔ server rejects unavailable size and ignores forged client price (15.036738ms)
+✔ demo order idempotency and privacy; no reward or review eligibility (46.423264ms)
+✔ admin validates full variant matrix and can publish real inventory (40.939366ms)
+✔ admin upload converts raster photos to WebP and rejects unsupported files and access (85.964361ms)
+✔ real order cannot contain demo products; server recalculates changed price (17.796032ms)
+✔ delivery earns rewards exactly once, and unlocks one verified review (25.044885ms)
+✔ rewards debit and cancellation refund are idempotent (18.319733ms)
+✔ return request is owner-only and revokes earned rewards exactly once (11.269241ms)
+✔ SEO serves record title, description, canonical and schema; demos stay noindex (33.618606ms)
+✔ stylist response references available real products only and fails gracefully if incomplete (13.984579ms)
+✔ persisted database passes integrity check and preserves orders, products and ledger (1.281054ms)
+✔ production serves built assets, protects cookies and never exposes development login codes (331.635343ms)
+✔ home renders loaded product cards and meaningful heading without runtime errors (101.012585ms)
+✔ theme, language and wishlist controls update persisted preference and app state (83.512269ms)
+✔ catalog renders, product page selects available size and stages the cart (132.559514ms)
+✔ checkout, account and admin show honest authentication boundaries (316.530487ms)
+✔ agent tools read catalog and stage the same visible cart, rejecting invalid input (22.814348ms)
+✔ authenticated administrator can open all management panels and product editor (287.317605ms)
+ℹ tests 27
+ℹ suites 0
+ℹ pass 27
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1405.846188
