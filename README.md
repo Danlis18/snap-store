@@ -89,6 +89,7 @@ npm audit     # актуальні відомі вразливості зале�
 | `SMTP_SECURE` | `true` для 465; `false` для 587 з STARTTLS |
 | `SMTP_USER`, `SMTP_PASS` | Облікові дані SMTP у Variables, не в коді |
 | `MAIL_FROM` | Підтверджений відправник, наприклад `SNAP <shop@example.com>` |
+| `MAIL_REPLY_TO` | Адреса для відповідей покупців; можна вказати email власника, якщо домен відправника не приймає листи |
 | `ORDER_EMAIL` | `danilolisnicuk9@gmail.com` або інша адреса продавця для замовлень |
 | `DEV_AUTH` | `false` |
 | `PORT` | Railway надає або можна встановити 3000 |

@@ -4,6 +4,7 @@ import nodemailer from "nodemailer";
 // The injectable transport keeps tests local: no test emails leave the machine.
 export function createMailService(env = process.env, { fetchImpl = fetch, transportFactory = nodemailer.createTransport } = {}) {
   const from = env.MAIL_FROM?.trim();
+  const replyTo = env.MAIL_REPLY_TO?.trim();
   const requested = env.MAIL_PROVIDER?.trim().toLowerCase();
   const provider = requested || (env.RESEND_API_KEY ? "resend" : "smtp");
   const required = provider === "resend"
@@ -26,7 +27,7 @@ export function createMailService(env = process.env, { fetchImpl = fetch, transp
     async sendMail({ to, subject, text, html, idempotencyKey }) {
       if (!ready) throw Object.assign(new Error("Mail is not configured"), { code: "MAIL_NOT_CONFIGURED" });
       if (smtp) {
-        const result = await smtp.sendMail({ from, to, subject, text, ...(html ? { html } : {}) });
+        const result = await smtp.sendMail({ from, to, subject, text, ...(html ? { html } : {}), ...(replyTo ? { replyTo } : {}) });
         if (result.rejected?.length) throw Object.assign(new Error("Recipient rejected"), { code: "MAIL_RECIPIENT_REJECTED" });
         return result;
       }
@@ -37,7 +38,7 @@ export function createMailService(env = process.env, { fetchImpl = fetch, transp
           "Content-Type": "application/json",
           ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
         },
-        body: JSON.stringify({ from, to: Array.isArray(to) ? to : [to], subject, text, ...(html ? { html } : {}) }),
+        body: JSON.stringify({ from, to: Array.isArray(to) ? to : [to], subject, text, ...(html ? { html } : {}), ...(replyTo ? { reply_to: replyTo } : {}) }),
         signal: AbortSignal.timeout(15000),
         redirect: "error",
       });

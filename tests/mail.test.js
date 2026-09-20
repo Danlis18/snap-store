@@ -5,7 +5,7 @@ import { getAdminEmails, storeOwnerEmail } from "../server/config.js";
 
 test("Resend uses HTTPS, verified sender and private authorization, with stable outbox idempotency", async () => {
   let request;
-  const mail = createMailService({ RESEND_API_KEY: "test-key", MAIL_FROM: "SNAP <shop@example.test>" }, {
+  const mail = createMailService({ RESEND_API_KEY: "test-key", MAIL_FROM: "SNAP <shop@example.test>", MAIL_REPLY_TO: "owner@example.test" }, {
     fetchImpl: async (url, options) => {
       request = { url, ...options };
       return new Response(JSON.stringify({ id: "local-mail-1" }), { status: 200 });
@@ -19,7 +19,7 @@ test("Resend uses HTTPS, verified sender and private authorization, with stable 
   assert.equal(request.headers.Authorization, "Bearer test-key");
   assert.equal(request.headers["Idempotency-Key"], "snap-order-local-1");
   assert.equal(request.redirect, "error");
-  assert.deepEqual(JSON.parse(request.body), { from: "SNAP <shop@example.test>", to: ["buyer@example.test"], subject: "Local test", text: "Test only" });
+  assert.deepEqual(JSON.parse(request.body), { from: "SNAP <shop@example.test>", to: ["buyer@example.test"], subject: "Local test", text: "Test only", reply_to: "owner@example.test" });
 });
 
 test("a rejected, malformed or incomplete email response cannot be reported as delivered", async () => {
