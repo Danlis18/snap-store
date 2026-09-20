@@ -42,6 +42,8 @@ import {
   QuickView,
   Login,
   CartDrawer,
+  CountBadge,
+  Carriers,
 } from "./components";
 import "./styles.css";
 import { AgentTools, Consent } from "./enhancements";
@@ -153,10 +155,10 @@ function Header() {
             </button>
             <Link to="/" className="logo" aria-label="SNAP Store — головна">
               <img
-                src="/snap-logo.png"
+                src="/brand/snap-logo-full.png"
                 alt="SNAP Store"
-                width="166"
-                height="56"
+                width="2047"
+                height="926"
               />
             </Link>
           </div>
@@ -191,22 +193,18 @@ function Header() {
             <Link
               to="/wishlist"
               className="icon-button wishlist-icon"
-              aria-label={t("Обране", "Wishlist")}
+              aria-label={t(`Обране: ${wishlist.length}`, `Wishlist: ${wishlist.length}`)}
             >
               <Heart size={21} />
-              {wishlist.length > 0 && (
-                <b className="counter">{wishlist.length}</b>
-              )}
+              <CountBadge count={wishlist.length} />
             </Link>
             <button
               className="icon-button cart-icon"
-              aria-label={t("Відкрити кошик", "Open bag")}
+              aria-label={t(`Відкрити кошик: ${cart.reduce((s, i) => s + i.quantity, 0)}`, `Open bag: ${cart.reduce((s, i) => s + i.quantity, 0)}`)}
               onClick={() => setCartOpen(true)}
             >
               <ShoppingBag size={22} />
-              <b className="counter">
-                {cart.reduce((s, i) => s + i.quantity, 0)}
-              </b>
+              <CountBadge count={cart.reduce((s, i) => s + i.quantity, 0)} />
             </button>
           </div>
         </div>
@@ -1248,6 +1246,7 @@ function Info({ page }) {
       <h1>{titles[page]}</h1>
       {key ? (
         <>
+          {page === "delivery" && <Carriers className="delivery-carriers" />}
           <p className="preserve-lines">
             {s[key + (lang === "en" ? "En" : "")]}
           </p>
@@ -1372,10 +1371,10 @@ function Footer() {
           <div className="footer-brand">
             <Link className="logo" to="/">
               <img
-                src="/snap-logo.png"
+                src="/brand/snap-logo-full.png"
                 alt="SNAP Store"
-                width="166"
-                height="56"
+                width="2047"
+                height="926"
                 loading="lazy"
               />
             </Link>
@@ -1384,6 +1383,7 @@ function Footer() {
               <br />
               SMART PRICE.
             </p>
+            <Carriers className="footer-carriers" />
             <div className="socials">
               {s.instagram && (
                 <a

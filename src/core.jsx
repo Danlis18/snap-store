@@ -7,7 +7,7 @@ import React, {
 } from "react";
 const Context = createContext(null);
 let csrf = "";
-export async function api(url, options = {}) {
+export async function api(url, options = {}, retried = false) {
   const response = await fetch("/api" + url, {
     credentials: "same-origin",
     ...options,
@@ -25,11 +25,19 @@ export async function api(url, options = {}) {
           ? undefined
           : JSON.stringify(options.body),
   });
-  const data = await response.json();
-  if (!response.ok)
-    throw new Error(
-      data.error + (data.details ? " · " + data.details.join("; ") : ""),
-    );
+  const data = await response.json().catch(() => {
+    throw new Error("Не вдалося з’єднатися з магазином. Спробуйте ще раз.");
+  });
+  if (response.status === 403 && data.code === "SESSION_REFRESHED" && !retried) {
+    await api("/bootstrap");
+    return api(url, options, true);
+  }
+  if (!response.ok) {
+    const error = new Error((data.error || "Не вдалося виконати дію.") + (data.details ? " · " + data.details.join("; ") : ""));
+    error.status = response.status;
+    error.retryAfter = Number(data.retryAfter || response.headers.get("Retry-After")) || 0;
+    throw error;
+  }
   if (data.csrf) csrf = data.csrf;
   return data;
 }

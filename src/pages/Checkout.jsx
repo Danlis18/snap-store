@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
-import { ArrowRight, Check, Truck, ShieldCheck, Gift } from "lucide-react";
+import { ArrowRight, Check, ShieldCheck, Gift } from "lucide-react";
 import { api, useShop, money, Link } from "../core";
-import { Button, Login, Empty } from "../components";
+import { CarrierLogo, Button, Login, Empty } from "../components";
+import { createId } from "../ids";
 export default function Checkout() {
   const { t, lang, user, cart, products, settings, refresh } = useShop();
   const [form, setForm] = useState({
@@ -21,7 +22,8 @@ export default function Checkout() {
     [busy, setBusy] = useState(false),
     [quoteBusy, setQuoteBusy] = useState(false),
     [order, setOrder] = useState(null);
-  const idem = useRef(crypto.randomUUID());
+  const idem = useRef(null);
+  if (!idem.current) idem.current = createId();
   useEffect(() => {
     if (user)
       setForm((f) => ({
@@ -269,7 +271,7 @@ export default function Checkout() {
                           }))
                         }
                       />
-                      <Truck size={18} />
+                      <CarrierLogo carrier={value} />
                       {t(uk, en)}
                     </label>
                   ))}

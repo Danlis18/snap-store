@@ -2,7 +2,6 @@ import express from "express";
 import helmet from "helmet";
 import multer from "multer";
 import sharp from "sharp";
-import nodemailer from "nodemailer";
 import { z } from "zod";
 import {
   randomBytes,
@@ -18,6 +17,8 @@ import { createStore } from "./store.js";
 import { quoteCart, PublicError, nextStatus } from "./commerce.js";
 import { brands, defaultSettings } from "./seed.js";
 import { recommendLooks } from "./stylist.js";
+import { getAdminEmails } from "./config.js";
+import { createMailService, loginEmail } from "./mail.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const production = process.env.NODE_ENV === "production";
@@ -49,27 +50,9 @@ const store = createStore(dataDir),
 const hash = (value) =>
   createHmac("sha256", secret).update(value).digest("hex");
 const now = () => new Date().toISOString();
-const adminEmails = (process.env.ADMIN_EMAILS || "")
-  .toLowerCase()
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
-const mailReady = Boolean(
-  process.env.SMTP_HOST &&
-  process.env.MAIL_FROM &&
-  process.env.SMTP_USER &&
-  process.env.SMTP_PASS,
-);
-const mailer = mailReady
-  ? nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT || 587),
-      secure: process.env.SMTP_SECURE === "true",
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-      connectionTimeout: 10000,
-      socketTimeout: 15000,
-    })
-  : null;
+const adminEmails = getAdminEmails();
+const mailer = createMailService();
+const mailReady = mailer.ready;
 const aiReady = Boolean(
   process.env.AI_API_KEY && process.env.AI_API_URL && process.env.AI_MODEL,
 );
@@ -104,7 +87,7 @@ app.use(
         ],
         fontSrc: ["'self'", "data:"],
         objectSrc: ["'none'"],
-        frameAncestors: ["'none'"],
+        frameAncestors: production ? ["'none'"] : ["'self'"],
         upgradeInsecureRequests: production ? [] : null,
       },
     },
@@ -172,7 +155,7 @@ app.use("/api", (req, res, next) => {
     if (req.headers["x-csrf-token"] !== req.session.csrf)
       return res
         .status(403)
-        .json({ error: "Сесію оновлено. Оновіть сторінку та повторіть дію." });
+        .json({ error: "Сесію оновлено. Оновіть сторінку та повторіть дію.", code: "SESSION_REFRESHED" });
   }
   next();
 });
@@ -328,13 +311,19 @@ app.put("/api/wishlist", (req, res) => {
 });
 app.post("/api/auth/request", async (req, res) => {
   const email = emailSchema.parse(req.body.email);
-  rate("otp-ip:" + req.ip, 30);
-  rate("otp-email:" + email, 3);
   if (!mailReady && !devAuth)
     throw new PublicError(
       "Вхід тимчасово недоступний: пошту магазину ще не підключено.",
       503,
     );
+  rate("otp-ip:" + req.ip, 30);
+  const previous = db.prepare("SELECT expires FROM otps WHERE email=?").get(email);
+  const retryAfter = previous ? Math.ceil((previous.expires - 540000 - Date.now()) / 1000) : 0;
+  if (retryAfter > 0) {
+    res.setHeader("Retry-After", String(retryAfter));
+    return res.status(429).json({ error: "Зачекайте перед повторним надсиланням коду.", retryAfter });
+  }
+  rate("otp-email:" + email, 3);
   const code = String(randomInt(100000, 1000000));
   db.prepare(
     "INSERT INTO otps VALUES(?,?,?,0) ON CONFLICT(email) DO UPDATE SET hash=excluded.hash,expires=excluded.expires,attempts=0",
@@ -342,10 +331,8 @@ app.post("/api/auth/request", async (req, res) => {
   if (mailReady) {
     try {
       await mailer.sendMail({
-        from: process.env.MAIL_FROM,
         to: email,
-        subject: "SNAP — код входу",
-        text: `Ваш код входу: ${code}\nДіє 10 хвилин. Нікому його не повідомляйте. Якщо ви не запитували код, ігноруйте лист.`,
+        ...loginEmail(code, req.body.lang),
       });
     } catch (e) {
       db.prepare("DELETE FROM otps WHERE email=?").run(email);
@@ -356,7 +343,7 @@ app.post("/api/auth/request", async (req, res) => {
       );
     }
   }
-  res.json({ ok: true, ...(devAuth ? { devCode: code } : {}) });
+  res.json({ ok: true, retryAfter: 60, ...(devAuth ? { devCode: code } : {}) });
 });
 app.post("/api/auth/verify", (req, res) => {
   const { email, code } = z
@@ -454,7 +441,7 @@ function enqueue(recipient, subject, body) {
 }
 let mailing = false;
 async function drainMail() {
-  if (!mailer || mailing) return;
+  if (!mailReady || mailing) return;
   mailing = true;
   try {
     for (const job of db
@@ -464,10 +451,10 @@ async function drainMail() {
       .all(Date.now())) {
       try {
         await mailer.sendMail({
-          from: process.env.MAIL_FROM,
           to: job.recipient,
           subject: job.subject,
           text: job.body,
+          idempotencyKey: `snap-order-${job.id}`,
         });
         db.prepare("UPDATE outbox SET status='sent' WHERE id=?").run(job.id);
       } catch (e) {
@@ -826,6 +813,8 @@ app.get("/api/admin", admin, (req, res) => {
     mail,
     readiness: {
       mail: mailReady,
+      mailProvider: mailer.provider,
+      mailMissing: mailer.missing,
       orderEmail: Boolean(process.env.ORDER_EMAIL),
       ai: aiReady,
       persistentData: Boolean(process.env.DATA_DIR),
@@ -1003,7 +992,7 @@ app.put("/api/admin/settings", admin, (req, res) => {
       !store.products().some((p) => !p.demo))
   )
     throw new PublicError(
-      "Для продажів потрібні SMTP, ORDER_EMAIL, реквізити продавця, контактний email, затверджені політики й реальні товари.",
+      "Для продажів потрібні поштовий сервіс, ORDER_EMAIL, реквізити продавця, контактний email, затверджені політики й реальні товари.",
     );
   if (s.seoIndex && !s.shopLive)
     throw new PublicError("Індексація доступна лише після відкриття продажів");

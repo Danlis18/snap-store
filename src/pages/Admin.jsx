@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { api, useShop, money, Link } from "../core";
 import { Button, Login, Modal, Empty } from "../components";
+import { createId } from "../ids";
 const statusNames = {
   new: "Нове",
   confirmed: "Підтверджено",
@@ -933,7 +934,7 @@ export default function Admin() {
     .reduce((s, o) => s + o.quote.total, 0);
   function newProduct() {
     const base = structuredClone(data.products[0]);
-    const id = "p-" + crypto.randomUUID().slice(0, 8);
+    const id = "p-" + createId().slice(0, 8);
     setEdit({
       ...base,
       id,

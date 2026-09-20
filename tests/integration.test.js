@@ -223,6 +223,10 @@ test("email code creates account, consumes OTP and keeps session private", async
   const otp = await c.call("/auth/request", "POST", {
     email: "merge@snap.test",
   });
+  const duplicate = await c.call("/auth/request", "POST", { email: "merge@snap.test" });
+  assert.equal(duplicate.status, 429);
+  assert.ok(duplicate.data.retryAfter > 0 && duplicate.data.retryAfter <= 60);
+  assert.ok(Number(duplicate.headers.get("retry-after")) > 0);
   await c.call("/cart", "PUT", { items: [line(products[0])] });
   await c.call("/wishlist", "PUT", { items: [products[0].id] });
   assert.equal(

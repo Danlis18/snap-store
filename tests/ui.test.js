@@ -20,6 +20,11 @@ const state = {
   recent: [],
 };
 const win = new Window({ url: "http://localhost:4173/" });
+// Match older browsers and HTTP previews where randomUUID is not exposed.
+Object.defineProperty(globalThis, "crypto", {
+  value: { getRandomValues: crypto.getRandomValues.bind(crypto) },
+  configurable: true,
+});
 win.document.body.innerHTML = '<div id="root"></div>';
 win.document.head.innerHTML =
   '<title>SNAP</title><meta name="description"><meta name="robots"><link rel="canonical" href="http://localhost:4173/">';

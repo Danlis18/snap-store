@@ -13,6 +13,28 @@ import {
   LoaderCircle,
 } from "lucide-react";
 import { api, Link, money, navigate, useShop } from "./core";
+export function CarrierLogo({ carrier }) {
+  const logo = {
+    nova: ["nova-poshta.png", "Нова пошта"],
+    ukrposhta: ["ukrposhta.png", "Укрпошта"],
+  }[carrier];
+  return logo ? (
+    <span className={`carrier-logo ${carrier}`} aria-hidden="true">
+      <img src={`/carriers/${logo[0]}`} alt="" width={carrier === "nova" ? 32 : 17} height={carrier === "nova" ? 32 : 24} />
+    </span>
+  ) : <Truck size={20} aria-hidden="true" />;
+}
+export function Carriers({ className = "" }) {
+  const { t } = useShop();
+  return <div className={`carriers ${className}`}>
+    <span><CarrierLogo carrier="nova" />{t("Нова пошта", "Nova Poshta")}</span>
+    <span><CarrierLogo carrier="ukrposhta" />{t("Укрпошта", "Ukrposhta")}</span>
+  </div>;
+}
+export function CountBadge({ count }) {
+  if (count < 1) return null;
+  return <span className="counter" aria-hidden="true">{count > 99 ? "99+" : count}</span>;
+}
 export function Button({
   children,
   kind = "",
@@ -304,25 +326,47 @@ export function QuickView() {
   );
 }
 export function Login({ onSuccess }) {
-  const { t, refresh } = useShop();
+  const { t, lang, refresh, settings, setLoginOpen } = useShop();
   const [email, setEmail] = useState(""),
     [code, setCode] = useState(""),
     [sent, setSent] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [devCode, setDevCode] = useState("");
+    [devCode, setDevCode] = useState(""),
+    [cooldown, setCooldown] = useState(0);
+  const codeInput = useRef(null);
+  const unavailable = settings?.mailReady === false && !settings?.devAuth;
+  useEffect(() => {
+    if (!cooldown) return;
+    const timer = setTimeout(() => setCooldown((seconds) => Math.max(0, seconds - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [cooldown]);
+  useEffect(() => { if (sent) codeInput.current?.focus(); }, [sent]);
+  async function requestCode() {
+    const normalized = email.trim().toLowerCase();
+    const r = await api("/auth/request", { method: "POST", body: { email: normalized, lang } });
+    setEmail(normalized);
+    setSent(true);
+    setCode("");
+    setDevCode(r.devCode || "");
+    setCooldown(r.retryAfter || 60);
+    codeInput.current?.focus();
+  }
+  async function resend() {
+    if (busy || cooldown) return;
+    setBusy(true);
+    setError("");
+    try { await requestCode(); }
+    catch (e) { setError(e.message); if (e.retryAfter) setCooldown(e.retryAfter); }
+    finally { setBusy(false); }
+  }
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
     setError("");
     try {
       if (!sent) {
-        const r = await api("/auth/request", {
-          method: "POST",
-          body: { email },
-        });
-        setSent(true);
-        setDevCode(r.devCode || "");
+        await requestCode();
       } else {
         await api("/auth/verify", { method: "POST", body: { email, code } });
         await refresh();
@@ -330,12 +374,13 @@ export function Login({ onSuccess }) {
       }
     } catch (e) {
       setError(e.message);
+      if (e.retryAfter) setCooldown(e.retryAfter);
     } finally {
       setBusy(false);
     }
   }
   return (
-    <form className="form login-form" onSubmit={submit}>
+    <form className="form login-form" onSubmit={submit} aria-busy={busy}>
       <div className="login-symbol">
         <Mail size={28} />
       </div>
@@ -347,8 +392,8 @@ export function Login({ onSuccess }) {
       <p className="muted">
         {sent
           ? t(
-              "Введи код із листа. Він діє 10 хвилин.",
-              "Enter the code from your email. Valid for 10 minutes.",
+              `Код надіслано на ${email}. Він діє 10 хвилин.`,
+              `Code sent to ${email}. It is valid for 10 minutes.`,
             )
           : t(
               "Без паролів. Введи email — надішлемо одноразовий код. Кабінет створиться автоматично.",
@@ -362,14 +407,22 @@ export function Login({ onSuccess }) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           autoComplete="email"
+          inputMode="email"
+          autoCapitalize="none"
+          spellCheck={false}
+          placeholder="you@example.com"
           required
-          disabled={sent}
+          readOnly={sent}
+          disabled={busy || unavailable}
+          autoFocus
         />
       </label>
       {sent && (
         <label>
           {t("Код підтвердження", "Verification code")}
           <input
+            ref={codeInput}
+            className="otp-input"
             value={code}
             onChange={(e) =>
               setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
@@ -378,8 +431,11 @@ export function Login({ onSuccess }) {
             autoComplete="one-time-code"
             pattern="[0-9]{6}"
             maxLength={6}
+            minLength={6}
+            placeholder="000000"
+            aria-invalid={Boolean(error)}
+            disabled={busy}
             required
-            autoFocus
           />
         </label>
       )}
@@ -394,29 +450,40 @@ export function Login({ onSuccess }) {
           {error}
         </p>
       )}
-      <Button busy={busy} type="submit">
+      {unavailable && <p className="notice login-unavailable" role="status">
+        {t("Вхід тимчасово недоступний. Спробуй трохи пізніше.", "Sign-in is temporarily unavailable. Please try again later.")}
+      </p>}
+      <Button busy={busy} type="submit" disabled={unavailable || (sent && code.length !== 6)}>
         {sent ? t("Увійти", "Sign in") : t("Отримати код", "Get a code")}
         <ArrowRight size={18} />
       </Button>
       {sent && (
+        <div className="login-actions">
         <button
           type="button"
           className="text-link"
+          disabled={busy}
           onClick={() => {
             setSent(false);
             setCode("");
             setError("");
+            setDevCode("");
           }}
         >
-          {t("Змінити email / надіслати знову", "Change email / resend")}
+          {t("Змінити email", "Change email")}
         </button>
+        <button type="button" className="text-link" disabled={busy || cooldown > 0} onClick={resend}>
+          {cooldown > 0 ? t(`Повторити через ${cooldown} с`, `Resend in ${cooldown}s`) : t("Надіслати ще раз", "Resend code")}
+        </button>
+        </div>
       )}
+      {sent && <p className="fine">{t("Немає листа? Перевір папку «Спам» та правильність адреси.", "No email? Check your spam folder and the email address.")}</p>}
       <p className="fine">
         {t(
           "Дані використовуємо для входу та замовлень.",
           "Your data is used for sign-in and orders.",
         )}{" "}
-        <Link to="/privacy">{t("Конфіденційність", "Privacy")}</Link>
+        <Link to="/privacy" onClick={() => setLoginOpen(false)}>{t("Конфіденційність", "Privacy")}</Link>
       </p>
     </form>
   );
@@ -477,12 +544,25 @@ export function CartDrawer() {
                     src={p?.images[0]}
                     alt={p?.name || t("Товар", "Product")}
                   />
-                  <div>
-                    <strong>{p?.brand}</strong>
-                    <p>{lang === "uk" ? p?.name : p?.nameEn}</p>
+                  <div className="cart-line-info">
+                    <div className="cart-line-heading">
+                      <div>
+                        <strong>{p?.brand}</strong>
+                        <p>{lang === "uk" ? p?.name : p?.nameEn}</p>
+                      </div>
+                      <button
+                        aria-label={t("Видалити товар", "Remove item")}
+                        className="icon-button"
+                        disabled={busy}
+                        onClick={() => change(index, -item.quantity)}
+                      >
+                        <X size={17} />
+                      </button>
+                    </div>
                     <small>
                       {item.color} / {item.size}
                     </small>
+                    <div className="cart-line-actions">
                     <div className="quantity">
                       <button
                         disabled={busy}
@@ -506,19 +586,10 @@ export function CartDrawer() {
                         <Plus size={14} />
                       </button>
                     </div>
-                  </div>
-                  <div className="line-end">
-                    <button
-                      aria-label={t("Видалити товар", "Remove item")}
-                      className="icon-button"
-                      disabled={busy}
-                      onClick={() => change(index, -item.quantity)}
-                    >
-                      <X size={17} />
-                    </button>
-                    <strong>
+                    <strong className="cart-line-price">
                       {p ? money(p.price * item.quantity, lang) : "—"}
                     </strong>
+                    </div>
                   </div>
                 </div>
               );
