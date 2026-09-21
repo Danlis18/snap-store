@@ -110,6 +110,10 @@ export default function Account() {
           {t("Вийти", "Sign out")}
         </Button>
       </div>
+      {user.isAdmin && <div className="owner-welcome">
+        <div><strong>{t("Ти увійшов як адміністратор", "You are signed in as an administrator")}</strong><p>{t("Додавай товари, змінюй фото й ціни, керуй замовленнями та налаштуваннями магазину.", "Manage products, photos, prices, orders and store settings.")}</p></div>
+        <Link className="button" to="/admin">{t("Відкрити панель керування", "Open store management")}<ArrowUpRight size={18} /></Link>
+      </div>}
       <div className="account-stats">
         <div className="reward-card">
           <Gift size={26} />

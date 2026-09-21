@@ -1668,6 +1668,19 @@ function App() {
         {t("До вмісту", "Skip to content")}
       </a>
       <Header />
+      {ctx.user?.isAdmin && (
+        <nav className="owner-bar" aria-label={t("Керування магазином", "Store management")}>
+          <div className="wrap owner-bar-inner">
+            <Link to="/admin" className="owner-home"><ShieldCheck size={18} />{t("Панель керування", "Manage store")}</Link>
+            <div className="owner-shortcuts">
+              <Link to="/admin?tab=products">{t("Товари", "Products")}</Link>
+              <Link to="/admin?tab=orders">{t("Замовлення", "Orders")}</Link>
+              <Link to="/admin?tab=settings">{t("Налаштування", "Settings")}</Link>
+              <Link to="/admin?tab=overview" className="owner-mode">{ctx.settings.shopLive ? t("Продажі відкрито", "Sales open") : t("Підготовка магазину", "Store setup")}</Link>
+            </div>
+          </div>
+        </nav>
+      )}
       <AgentTools />
       <Consent />
       <div id="content" tabIndex={-1}>
@@ -1707,7 +1720,7 @@ function App() {
           )}
         >
           <span />
-          DEMO
+          {t("Демо-каталог · продажі ще не відкрито", "Demo catalog · sales not open yet")}
         </div>
       )}
     </>

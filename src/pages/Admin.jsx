@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   Search,
 } from "lucide-react";
-import { api, useShop, money, Link } from "../core";
+import { api, useShop, money, Link, useRoute, navigate } from "../core";
 import { Button, Login, Modal, Empty } from "../components";
 import { createId } from "../ids";
 const statusNames = {
@@ -413,7 +413,7 @@ function ProductEditor({ product, onSave, onClose }) {
           checked={p.demo}
           onChange={(e) => setP((p) => ({ ...p, demo: e.target.checked }))}
         />
-        Демонстраційний товар (не продається в бойовому режимі)
+        Демонстраційний зразок (приховається після відкриття продажів)
       </label>
       {error && (
         <p className="form-error" role="alert">
@@ -870,8 +870,13 @@ function Promos({ data, onSave }) {
 }
 export default function Admin() {
   const { user, t, refresh, setToast } = useShop();
+  const route = useRoute();
+  const requestedTab = new URLSearchParams(route.split("?")[1] || "").get("tab");
+  const tab = ["overview", "products", "orders", "customers", "promos", "settings", "mail", "newsletter"].includes(requestedTab) ? requestedTab : "products";
+  const setTab = (value) => navigate("/admin?tab=" + value);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [brandFilter, setBrandFilter] = useState("");
   const [data, setData] = useState(null),
-    [tab, setTab] = useState("overview"),
     [error, setError] = useState(""),
     [query, setQuery] = useState(""),
     [edit, setEdit] = useState(null),
@@ -891,7 +896,7 @@ export default function Admin() {
   }
   useEffect(() => {
     if (user?.isAdmin) load();
-  }, [user?.id]);
+  }, [user?.id, user?.isAdmin]);
   if (!user)
     return (
       <main className="wrap account-login">
@@ -901,8 +906,8 @@ export default function Admin() {
         <Login />
         <div className="notice">
           {t(
-            "Увійди з email, доданим власником до ADMIN_EMAILS у Railway.",
-            "Sign in with an email listed by the owner in Railway ADMIN_EMAILS.",
+            "Увійди з поштою адміністратора, щоб додавати товари та керувати магазином.",
+            "Sign in with your administrator email to manage products and the store.",
           )}
         </div>
       </main>
@@ -914,9 +919,10 @@ export default function Admin() {
           icon={ShieldCheck}
           title={t("Доступ обмежено", "Access restricted")}
           text={t(
-            "Цей акаунт не має прав адміністратора.",
-            "This account does not have administrator access.",
+            `Ти увійшов як ${user.email}. Для цієї пошти доступ до керування не налаштовано. Режим демо не обмежує права адміністратора.`,
+            `Signed in as ${user.email}. This email does not have administrator access. Demo mode does not restrict administrator permissions.`,
           )}
+          action={<div className="admin-access-actions"><Button onClick={async () => { try { await refresh(); } catch (e) { setToast(e.message); } }}>{t("Оновити доступ", "Refresh access")}</Button><Button kind="outline" onClick={async () => { try { await api("/auth/logout", { method: "POST", body: {} }); await refresh(); } catch (e) { setToast(e.message); } }}>{t("Увійти з іншої пошти", "Use another email")}</Button></div>}
         />
       </main>
     );
@@ -933,7 +939,7 @@ export default function Admin() {
     .filter((o) => !o.demo && o.status === "delivered")
     .reduce((s, o) => s + o.quote.total, 0);
   function newProduct() {
-    const base = structuredClone(data.products[0]);
+    const base = { brand: "", category: "clothing", type: "tshirt", description: "", descriptionEn: "", composition: "", fit: "", season: "всесезон", sizeGuide: "" };
     const id = "p-" + createId().slice(0, 8);
     setEdit({
       ...base,
@@ -953,25 +959,35 @@ export default function Admin() {
         available: true,
       })),
       badge: "new",
-      demo: true,
+      demo: false,
       active: false,
       createdAt: new Date().toISOString(),
       popularity: 0,
     });
   }
+  const visibleProducts = data.products.filter((p) =>
+    (!brandFilter || p.brand === brandFilter) &&
+    (statusFilter === "all" || (statusFilter === "real" && !p.demo) || (statusFilter === "demo" && p.demo) || (statusFilter === "hidden" && !p.active)) &&
+    (p.name + " " + p.brand + " " + p.sku).toLowerCase().includes(query.trim().toLowerCase())
+  );
   return (
     <main className="wrap admin-page">
       <div className="admin-heading">
         <div>
-          <p className="eyebrow">SNAP / CONTROL ROOM</p>
-          <h1>Твій магазин. Усе під контролем.</h1>
+          <p className="eyebrow">SNAP / АДМІНІСТРАТОР</p>
+          <h1>Керування магазином</h1>
+          <p className="muted admin-identity">{user.email} · Повний доступ</p>
         </div>
         <Button kind="outline" onClick={load}>
           <RefreshCw size={16} />
           Оновити
         </Button>
       </div>
-      <div className="admin-tabs">
+      {!data.settings.shopLive && <div className="admin-setup-banner">
+        <div><strong>Магазин готується до відкриття</strong><p>Ти можеш додавати та редагувати все вже зараз. Демо — це режим вітрини: продажі відкриваються окремо, після наповнення.</p></div>
+        <Button kind="outline" onClick={() => setTab("overview")}>Що залишилось до запуску</Button>
+      </div>}
+      <div className="admin-tabs" aria-label="Розділи керування">
         {[
           ["overview", "Огляд"],
           ["products", "Товари"],
@@ -984,6 +1000,7 @@ export default function Admin() {
         ].map(([key, label]) => (
           <button
             key={key}
+            aria-current={tab === key ? "page" : undefined}
             className={tab === key ? "active" : ""}
             onClick={() => setTab(key)}
           >
@@ -1016,6 +1033,7 @@ export default function Admin() {
               <b>{data.customers.length}</b>
             </div>
           </div>
+          <div className="admin-quick-actions"><Button onClick={newProduct}><Plus size={18} />Додати товар</Button><Button kind="outline" onClick={() => setTab("settings")}><Settings size={18} />Налаштувати магазин</Button><Link className="button outline" to="/">Переглянути вітрину<ArrowUpRight size={18} /></Link></div>
           <h2>Готовність до запуску</h2>
           <div className="readiness">
             {[
@@ -1026,6 +1044,7 @@ export default function Admin() {
                 data.products.some((p) => p.active && !p.demo),
               ],
               ["Реквізити продавця", Boolean(data.settings.sellerDetails)],
+              ["Контактний email", Boolean(data.settings.supportEmail)],
               ["Умови затверджено", data.settings.policiesApproved],
               [
                 "Шлях до постійного сховища задано",
@@ -1083,8 +1102,14 @@ export default function Admin() {
               Додати товар
             </Button>
           </div>
-          <div className="table-scroll">
-            <table className="admin-table">
+          <div className="admin-product-filters">
+            <label>Статус<select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="all">Усі товари</option><option value="real">Реальні товари</option><option value="demo">Демонстраційні</option><option value="hidden">Приховані</option></select></label>
+            <label>Бренд<select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)}><option value="">Усі бренди</option>{[...new Set(data.products.map((p) => p.brand))].sort().map((brand) => <option key={brand}>{brand}</option>)}</select></label>
+            <span className="muted">{data.products.length} товарів у базі · {data.products.filter((p) => !p.demo).length} реальних</span>
+          </div>
+          {!visibleProducts.length && <Empty title="Товарів не знайдено" text="Додай новий товар або зміни фільтри." action={<Button kind="outline" onClick={() => { setQuery(""); setBrandFilter(""); setStatusFilter("all"); }}>Скинути фільтри</Button>} />}
+          <div className="table-scroll admin-products-scroll">
+            <table className="admin-table admin-products-table">
               <thead>
                 <tr>
                   <th>Товар</th>
@@ -1095,12 +1120,7 @@ export default function Admin() {
                 </tr>
               </thead>
               <tbody>
-                {data.products
-                  .filter((p) =>
-                    (p.name + " " + p.brand + " " + p.sku)
-                      .toLowerCase()
-                      .includes(query.toLowerCase()),
-                  )
+                {visibleProducts
                   .map((p) => (
                     <tr key={p.id}>
                       <td className="product-cell">
@@ -1111,14 +1131,14 @@ export default function Admin() {
                           <small>{p.sku}</small>
                         </span>
                       </td>
-                      <td>{money(p.price)}</td>
+                      <td data-label="Ціна">{money(p.price)}</td>
                       <td>
                         <span className="admin-status">
                           {p.active ? "У каталозі" : "Приховано"}
                         </span>
-                        {p.demo && <span className="admin-status">DEMO</span>}
+                        <span className="admin-status">{p.demo ? "Демонстраційний" : "Реальний товар"}</span>
                       </td>
-                      <td>
+                      <td data-label="Доступні варіанти">
                         {p.variants.filter((v) => v.available).length} /{" "}
                         {p.variants.length}
                       </td>
