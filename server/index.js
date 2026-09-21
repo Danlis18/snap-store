@@ -15,7 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createStore } from "./store.js";
 import { quoteCart, PublicError, nextStatus } from "./commerce.js";
-import { brands, defaultSettings } from "./seed.js";
+import { defaultSettings } from "./seed.js";
 import { recommendLooks } from "./stylist.js";
 import { getAdminEmails } from "./config.js";
 import { createMailService, loginEmail } from "./mail.js";
@@ -238,7 +238,7 @@ app.get("/api/bootstrap", (req, res) =>
     user: publicUser(req),
     csrf: req.session.csrf,
     settings: publicSettings(),
-    brands: [...new Set([...brands, ...store.products().map((p) => p.brand)])],
+    brands: store.brands(),
     cart: store.getList("carts", req.owner),
     wishlist: store.getList("wishlists", req.owner),
     recent: JSON.parse(req.session.recent),
@@ -805,6 +805,7 @@ app.get("/api/admin", admin, (req, res) => {
     .all();
   res.json({
     products: store.products(true),
+    brands: store.brands(),
     settings: store.settings(),
     orders,
     customers,
@@ -822,6 +823,35 @@ app.get("/api/admin", admin, (req, res) => {
     },
     audit: db.prepare("SELECT * FROM audit ORDER BY id DESC LIMIT 50").all(),
   });
+});
+const brandName = z.string().trim().min(1).max(80).refine((name) => !/[\u0000-\u001f\u007f]/.test(name), "Некоректна назва бренду");
+app.post("/api/admin/brands", admin, (req, res) => {
+  const name = brandName.parse(req.body.name);
+  if (store.brands().some((b) => b.toLowerCase() === name.toLowerCase())) throw new PublicError("Такий бренд уже існує", 409);
+  store.tx(() => { db.prepare("INSERT INTO brands(name) VALUES(?)").run(name); audit(req, "create_brand", name); });
+  res.status(201).json({ brands: store.brands() });
+});
+app.put("/api/admin/brands/:name", admin, (req, res) => {
+  const oldName = req.params.name;
+  const name = brandName.parse(req.body.name);
+  if (!store.brands().includes(oldName)) throw new PublicError("Бренд не знайдено", 404);
+  if (store.brands().some((b) => b !== oldName && b.toLowerCase() === name.toLowerCase())) throw new PublicError("Такий бренд уже існує", 409);
+  store.tx(() => {
+    db.prepare("UPDATE brands SET name=? WHERE name=?").run(name, oldName);
+    for (const product of store.products(true).filter((p) => p.brand === oldName)) {
+      product.brand = name;
+      db.prepare("UPDATE products SET data=? WHERE id=?").run(JSON.stringify(product), product.id);
+    }
+    audit(req, "rename_brand", oldName + " → " + name);
+  });
+  res.json({ brands: store.brands() });
+});
+app.delete("/api/admin/brands/:name", admin, (req, res) => {
+  const name = req.params.name;
+  if (!store.brands().includes(name)) throw new PublicError("Бренд не знайдено", 404);
+  if (store.products(true).some((p) => p.brand === name)) throw new PublicError("Спочатку зміни бренд у всіх його товарах, включно з прихованими.", 409);
+  store.tx(() => { db.prepare("DELETE FROM brands WHERE name=?").run(name); audit(req, "delete_brand", name); });
+  res.json({ brands: store.brands() });
 });
 const imagePath = z
   .string()
@@ -853,6 +883,7 @@ const productSchema = z
         z.object({
           name: z.string().min(1).max(60),
           hex: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+          images: z.array(imagePath).max(8).default([]),
         }),
       )
       .min(1)
@@ -907,7 +938,8 @@ const productSchema = z
   });
 app.put("/api/admin/products/:id", admin, (req, res) => {
   const p = productSchema.parse({ ...req.body, id: req.params.id });
-  if (!p.demo && p.images.some((i) => i.startsWith("/assets/")))
+  if (!store.brands().includes(p.brand)) throw new PublicError("Обери бренд зі списку або додай його в розділі «Бренди».");
+  if (!p.demo && [...p.images, ...p.colors.flatMap((c) => c.images)].some((i) => i.startsWith("/assets/")))
     throw new PublicError(
       "Замініть усі демонстраційні зображення перед публікацією реального товару",
     );
@@ -1219,7 +1251,7 @@ app.get("/{*path}", async (req, res) => {
     }
   } else if (urlPath.startsWith("/brands/")) {
     const b = decodeURIComponent(urlPath.slice(8));
-    if (![...brands, ...store.products().map((p) => p.brand)].includes(b)) {
+    if (!store.brands().includes(b)) {
       status = 404;
       noindex = true;
     }

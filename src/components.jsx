@@ -13,6 +13,7 @@ import {
   LoaderCircle,
 } from "lucide-react";
 import { api, Link, money, navigate, useShop } from "./core";
+import { productImages } from "../shared/product-media.js";
 export function CarrierLogo({ carrier }) {
   const logo = {
     nova: ["nova-poshta.png", "Нова пошта"],
@@ -60,6 +61,7 @@ export function Modal({
   children,
   drawer = false,
   wide = false,
+  closeOnly = false,
 }) {
   const ref = useRef();
   useEffect(() => {
@@ -77,10 +79,10 @@ export function Modal({
       className={`dialog ${drawer ? "drawer" : ""} ${wide ? "wide" : ""}`}
       onCancel={(e) => {
         e.preventDefault();
-        onClose();
+        if (!closeOnly) onClose();
       }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (!closeOnly && e.target === e.currentTarget) onClose();
       }}
       aria-label={title}
     >
@@ -196,7 +198,7 @@ export function ProductGrid({ products }) {
     </div>
   );
 }
-export function VariantPicker({ product: p, onAdded, compact = false }) {
+export function VariantPicker({ product: p, onAdded, compact = false, onColorChange }) {
   const { t, lang, addToCart, setToast, toggleWish, wishlist } = useShop();
   const [color, setColor] = useState(p.colors[0]?.name),
     [size, setSize] = useState(""),
@@ -238,6 +240,8 @@ export function VariantPicker({ product: p, onAdded, compact = false }) {
             onClick={() => {
               setColor(c.name);
               setSize("");
+              setError("");
+              onColorChange?.(c.name);
             }}
           >
             <span />
@@ -290,6 +294,9 @@ export function VariantPicker({ product: p, onAdded, compact = false }) {
 }
 export function QuickView() {
   const { quick, setQuick, t, lang } = useShop();
+  const [selection, setSelection] = useState(null);
+  useEffect(() => setSelection(null), [quick]);
+  const color = selection && quick && selection.id === quick.id ? selection.color : quick?.colors[0]?.name;
   return (
     <Modal
       open={Boolean(quick)}
@@ -299,7 +306,7 @@ export function QuickView() {
       {quick && (
         <>
           <div className="quick-product">
-            <img src={quick.images[0]} alt={quick.name} />
+            <img src={productImages(quick, color)[0]} alt={quick.name} />
             <div>
               <p className="eyebrow">{quick.brand}</p>
               <h3>{lang === "uk" ? quick.name : quick.nameEn}</h3>
@@ -309,6 +316,7 @@ export function QuickView() {
           <VariantPicker
             key={quick.id}
             product={quick}
+            onColorChange={(color) => setSelection({ id: quick.id, color })}
             compact
             onAdded={() => setQuick(null)}
           />
@@ -541,7 +549,7 @@ export function CartDrawer() {
                   key={[item.productId, item.color, item.size].join()}
                 >
                   <img
-                    src={p?.images[0]}
+                    src={productImages(p, item.color)[0]}
                     alt={p?.name || t("Товар", "Product")}
                   />
                   <div className="cart-line-info">

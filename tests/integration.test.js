@@ -524,3 +524,36 @@ test("persisted database passes integrity check and preserves orders, products a
   assert.equal(reopened.prepare("SELECT COUNT(*) n FROM orders").get().n, 3);
   reopened.close();
 });
+
+test("brand registry and colour galleries persist behind admin permissions", async () => {
+  assert.equal((await buyer.call("/admin/brands", "POST", { name: "QA Brand" })).status, 403);
+  assert.equal((await admin.call("/admin/brands", "POST", { name: " QA Brand " })).status, 201);
+  assert.equal((await admin.call("/admin/brands", "POST", { name: "qa brand" })).status, 409);
+  const p = structuredClone(products[0]);
+  p.id = "qa-colour-gallery"; p.slug = "qa-colour-gallery"; p.brand = "QA Brand"; p.active = false;
+  p.images = ["https://example.com/shared.png"];
+  p.colors[0].images = ["https://example.com/colour.png"];
+  let response = await admin.call("/admin/products/" + p.id, "PUT", p);
+  assert.equal(response.status, 200, JSON.stringify(response.data));
+  let stored = (await admin.call("/admin")).data.products.find((item) => item.id === p.id);
+  assert.deepEqual(stored.colors[0].images, p.colors[0].images);
+  assert.equal((await admin.call("/admin/brands/QA%20Brand", "PUT", { name: "QA Renamed" })).status, 200);
+  stored = (await admin.call("/admin")).data.products.find((item) => item.id === p.id);
+  assert.equal(stored.brand, "QA Renamed");
+  assert.ok((await anonymous.call("/bootstrap")).data.brands.includes("QA Renamed"));
+  assert.equal((await admin.call("/admin/brands/QA%20Renamed", "DELETE")).status, 409);
+  p.brand = products[0].brand;
+  p.colors[0].images = ["javascript:alert(1)"];
+  assert.equal((await admin.call("/admin/products/" + p.id, "PUT", p)).status, 400);
+  p.colors[0].images = ["/assets/puffer.webp"]; p.demo = false;
+  assert.equal((await admin.call("/admin/products/" + p.id, "PUT", p)).status, 400);
+  p.colors[0].images = ["https://example.com/colour.png"];
+  assert.equal((await admin.call("/admin/products/" + p.id, "PUT", p)).status, 200);
+  assert.equal((await admin.call("/admin/brands/QA%20Renamed", "DELETE")).status, 200);
+  const reopened = new DatabaseSync(path.join(dir, "snap.sqlite"));
+  assert.equal(reopened.prepare("SELECT COUNT(*) n FROM brands WHERE name='QA Renamed'").get().n, 0);
+  assert.equal(reopened.prepare("SELECT COUNT(*) n FROM migrations WHERE version=2").get().n, 1);
+  const saved = JSON.parse(reopened.prepare("SELECT data FROM products WHERE id=?").get(p.id).data);
+  assert.equal(saved.colors[0].images[0], "https://example.com/colour.png");
+  reopened.close();
+});

@@ -4486,3 +4486,22 @@ details[open] > summary > svg {
   .admin-heading h1 { font-size: 1.6rem; }
   .demo-indicator { max-width: calc(100vw - 24px); font-size: .75rem; }
 }
+
+.photo-upload-actions { display: flex; align-items: stretch; gap: 12px; flex-wrap: wrap; }
+.photo-upload-actions .upload-label { flex: 1; margin: 0; min-width: 200px; }
+.saved-message { color: var(--text); font-size: .875rem; line-height: 1.5; margin: 0; flex: 1; }
+.brand-manager > .muted { line-height: 1.6; }
+.brand-form { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; padding: 24px 0; }
+.brand-form label { flex: 1; min-width: 220px; }
+.brand-manager-list { display: grid; gap: 12px; }
+.brand-manager-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; border: 1px solid var(--line); padding: 20px; }
+.brand-manager-row strong { overflow-wrap: anywhere; }
+.brand-manager-row small { display: block; color: var(--muted); margin-top: 6px; font-size: .875rem; }
+.brand-row-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 600px) {
+  .photo-upload-actions > *, .brand-form > * { width: 100%; }
+  .brand-manager-row { align-items: flex-start; flex-direction: column; padding: 16px; }
+  .brand-row-actions { width: 100%; }
+  .brand-row-actions .button { flex: 1; font-size: .875rem; }
+  .admin-save:has(.saved-message) { flex-wrap: wrap; }
+}

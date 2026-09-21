@@ -1,3 +1,4 @@
+import { productImages } from "../../shared/product-media.js";
 import React, { useState, useEffect, useRef } from "react";
 import { ArrowRight, Check, ShieldCheck, Gift } from "lucide-react";
 import { api, useShop, money, Link } from "../core";
@@ -411,7 +412,7 @@ export default function Checkout() {
             const p = products.find((p) => p.id === i.productId);
             return (
               <div className="checkout-item" key={n}>
-                <img src={p?.images[0]} alt={p?.name} />
+                <img src={productImages(p, i.color)[0]} alt={p?.name} />
                 <div>
                   <strong>{p?.brand}</strong>
                   <p>{lang === "uk" ? p?.name : p?.nameEn}</p>

@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { seedProducts, defaultSettings } from "./seed.js";
+import { seedProducts, defaultSettings, brands as seedBrands } from "./seed.js";
 export function createStore(directory) {
   mkdirSync(directory, { recursive: true });
   mkdirSync(path.join(directory, "uploads"), { recursive: true });
@@ -11,6 +11,7 @@ export function createStore(directory) {
   );
   db.exec(`
  CREATE TABLE IF NOT EXISTS migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS brands(name TEXT PRIMARY KEY COLLATE NOCASE);
  CREATE TABLE IF NOT EXISTS products(id TEXT PRIMARY KEY,slug TEXT NOT NULL UNIQUE,active INTEGER NOT NULL,demo INTEGER NOT NULL,data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,email TEXT NOT NULL UNIQUE,name TEXT NOT NULL DEFAULT '',phone TEXT NOT NULL DEFAULT '',addresses TEXT NOT NULL DEFAULT '[]',created_at TEXT NOT NULL);
@@ -59,6 +60,17 @@ export function createStore(directory) {
       throw e;
     }
   }
+  if (!db.prepare("SELECT 1 FROM migrations WHERE version=2").get()) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const put = db.prepare("INSERT OR IGNORE INTO brands(name) VALUES(?)");
+      for (const name of seedBrands) put.run(name);
+      for (const row of db.prepare("SELECT data FROM products").all()) put.run(JSON.parse(row.data).brand);
+      db.prepare("INSERT INTO migrations VALUES(2,?)").run(new Date().toISOString());
+      db.exec("COMMIT");
+    } catch (error) { db.exec("ROLLBACK"); throw error; }
+  }
+  const brands = () => db.prepare("SELECT name FROM brands ORDER BY name COLLATE NOCASE").all().map((row) => row.name);
   db.exec("PRAGMA optimize");
   const tx = (fn) => {
     db.exec("BEGIN IMMEDIATE");
@@ -108,5 +120,5 @@ export function createStore(directory) {
       `INSERT INTO ${table}(owner,data) VALUES(?,?) ON CONFLICT(owner) DO UPDATE SET data=excluded.data`,
     ).run(owner, JSON.stringify(list));
   };
-  return { db, tx, settings, products, product, balance, getList, setList };
+  return { db, tx, brands, settings, products, product, balance, getList, setList };
 }

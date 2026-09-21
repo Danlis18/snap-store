@@ -1,3 +1,4 @@
+import { productImages } from "../shared/product-media.js";
 export class PublicError extends Error {
   constructor(message, status = 400) {
     super(message);
@@ -51,7 +52,7 @@ export function quoteCart({
       nameEn: p.nameEn,
       brand: p.brand,
       slug: p.slug,
-      image: p.images[0],
+      image: productImages(p, item.color)[0],
       price: p.price,
       total: p.price * item.quantity,
       demo: p.demo,

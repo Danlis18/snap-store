@@ -46,6 +46,7 @@ import {
   Carriers,
 } from "./components";
 import "./styles.css";
+import { productImages } from "../shared/product-media.js";
 import { AgentTools, Consent } from "./enhancements";
 const Checkout = lazy(() => import("./pages/Checkout"));
 const Account = lazy(() => import("./pages/Account"));
@@ -956,6 +957,8 @@ function Brands() {
 function Product({ slug }) {
   const { products, t, lang, refresh, setToast, recent = [] } = useShop();
   const p = products.find((p) => p.slug === slug);
+  const [selectedColor, setSelectedColor] = useState(null);
+  const gallery = productImages(p, selectedColor && p && selectedColor.id === p.id ? selectedColor.color : p?.colors[0]?.name);
   const [photo, setPhoto] = useState(0),
     [zoom, setZoom] = useState(false),
     [reviews, setReviews] = useState({ reviews: [], canReview: false }),
@@ -1016,7 +1019,7 @@ function Product({ slug }) {
             aria-label={t("Збільшити фото", "Enlarge image")}
           >
             <img
-              src={p.images[photo]}
+              src={gallery[photo] || gallery[0]}
               alt={lang === "uk" ? p.name : p.nameEn}
               width="900"
               height="900"
@@ -1026,7 +1029,7 @@ function Product({ slug }) {
             </span>
           </button>
           <div className="thumbnails">
-            {p.images.map((src, i) => (
+            {gallery.map((src, i) => (
               <button
                 key={src + i}
                 className={i === photo ? "active" : ""}
@@ -1068,7 +1071,7 @@ function Product({ slug }) {
           <p className="fine">
             {t("Код товару", "SKU")}: {p.sku}
           </p>
-          <VariantPicker key={p.id} product={p} />
+          <VariantPicker key={p.id} product={p} onColorChange={(color) => { setSelectedColor({ id: p.id, color }); setPhoto(0); }} />
           <div className="detail-perks">
             <p>
               <Truck size={18} />
@@ -1213,7 +1216,7 @@ function Product({ slug }) {
         title={lang === "uk" ? p.name : p.nameEn}
         wide
       >
-        <img className="zoom-photo" src={p.images[photo]} alt={p.name} />
+        <img className="zoom-photo" src={gallery[photo] || gallery[0]} alt={p.name} />
       </Modal>
     </main>
   );
@@ -1674,6 +1677,7 @@ function App() {
             <Link to="/admin" className="owner-home"><ShieldCheck size={18} />{t("Панель керування", "Manage store")}</Link>
             <div className="owner-shortcuts">
               <Link to="/admin?tab=products">{t("Товари", "Products")}</Link>
+              <Link to="/admin?tab=brands">{t("Бренди", "Brands")}</Link>
               <Link to="/admin?tab=orders">{t("Замовлення", "Orders")}</Link>
               <Link to="/admin?tab=settings">{t("Налаштування", "Settings")}</Link>
               <Link to="/admin?tab=overview" className="owner-mode">{ctx.settings.shopLive ? t("Продажі відкрито", "Sales open") : t("Підготовка магазину", "Store setup")}</Link>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Plus,
   Check,
@@ -32,13 +32,25 @@ const next = {
   returned: [],
   cancelled: [],
 };
-function ProductEditor({ product, onSave, onClose }) {
+function ProductEditor({ product, brands, onSave }) {
   const [p, setP] = useState(structuredClone(product)),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [uploading, setUploading] = useState(false),
     [imageUrl, setImageUrl] = useState(""),
+    [photoColor, setPhotoColor] = useState(-1),
+    [savedMessage, setSavedMessage] = useState(""),
     [sizesText, setSizesText] = useState(product.sizes.join(", "));
+  useEffect(() => setSavedMessage(""), [p]);
+  const uploadLock = useRef(false);
+  const photoIndex = photoColor < p.colors.length ? photoColor : -1;
+  const photos = photoIndex < 0 ? p.images : p.colors[photoIndex].images || [];
+  function updatePhotos(current, index, change) {
+    if (index < 0) return { ...current, images: change(current.images) };
+    if (!current.colors[index]) return current;
+    const images = change(current.colors[index].images || []);
+    return { ...current, images: current.images.length ? current.images : images.slice(0, 1), colors: current.colors.map((c, i) => i === index ? { ...c, images } : c) };
+  }
   const bind = (key, number = false) => ({
     value: p[key] ?? "",
     onChange: (e) =>
@@ -48,6 +60,8 @@ function ProductEditor({ product, onSave, onClose }) {
       })),
   });
   function rebuild(colors, sizes, rename = null) {
+    if (uploadLock.current) return;
+    if (colors.length !== p.colors.length) setPhotoColor(-1);
     setP((p) => ({
       ...p,
       colors,
@@ -66,29 +80,49 @@ function ProductEditor({ product, onSave, onClose }) {
       ),
     }));
   }
-  async function upload(file) {
-    if (!file) return;
+  async function uploadFiles(files) {
+    if (uploadLock.current) return;
+    const incoming = Array.from(files).filter((file) => file.type.startsWith("image/"));
+    if (!incoming.length) { setError("У буфері немає зображення. Скопіюй саме фото або завантаж файл."); return; }
+    if (photos.length + incoming.length > 8) { setError("У кожній галереї можна зберегти до 8 фото. Видали зайві або вибери інший колір."); return; }
+    if (incoming.some((file) => file.size > 8 * 1024 * 1024)) { setError("Кожне фото має бути не більшим за 8 МБ."); return; }
+    const target = photoIndex;
+    uploadLock.current = true;
     setUploading(true);
     setError("");
     try {
-      const body = new FormData();
-      body.append("image", file);
-      const data = await api("/admin/upload", { method: "POST", body });
-      setP((p) => ({ ...p, images: [...p.images, data.url].slice(0, 8) }));
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setUploading(false);
-    }
+      for (const file of incoming) {
+        const body = new FormData();
+        body.append("image", file, file.name || "clipboard.png");
+        const data = await api("/admin/upload", { method: "POST", body });
+        setP((current) => updatePhotos(current, target, (images) => [...images, data.url]));
+      }
+    } catch (e) { setError(e.message); }
+    finally { uploadLock.current = false; setUploading(false); }
+  }
+  async function pasteImage() {
+    setError("");
+    if (!navigator.clipboard?.read) { setError("Натисни Ctrl+V (або ⌘V) у вікні товару чи скористайся завантаженням файлу."); return; }
+    try {
+      const items = await navigator.clipboard.read();
+      const files = [];
+      for (const item of items) {
+        const type = item.types.find((type) => type.startsWith("image/"));
+        if (type) files.push(await item.getType(type));
+      }
+      await uploadFiles(files);
+    } catch { setError("Браузер не надав доступ до буфера. Спробуй Ctrl+V (⌘V) у вікні товару або завантаж файл."); }
   }
   async function save(e) {
     e.preventDefault();
+    if (uploadLock.current || busy) return;
     setError("");
+    setSavedMessage("");
     setBusy(true);
     try {
       await api("/admin/products/" + p.id, { method: "PUT", body: p });
       await onSave();
-      onClose();
+      setSavedMessage("Товар збережено. Можеш продовжувати редагування або закрити вікно хрестиком.");
     } catch (e) {
       setError(e.message);
     } finally {
@@ -96,7 +130,10 @@ function ProductEditor({ product, onSave, onClose }) {
     }
   }
   return (
-    <form className="form admin-form" onSubmit={save}>
+    <form className="form admin-form" onSubmit={save} onChange={() => setSavedMessage("")} onPaste={(event) => {
+      const files = Array.from(event.clipboardData?.items || []).filter((item) => item.kind === "file" && item.type.startsWith("image/")).map((item) => item.getAsFile()).filter(Boolean);
+      if (files.length) { event.preventDefault(); if (!busy) uploadFiles(files); }
+    }}>
       <div className="form-grid">
         <label>
           Назва українською
@@ -108,7 +145,8 @@ function ProductEditor({ product, onSave, onClose }) {
         </label>
         <label>
           Бренд
-          <input required {...bind("brand")} />
+          <select required {...bind("brand")}><option value="">Обери бренд</option>{brands.map((brand) => <option key={brand}>{brand}</option>)}</select>
+          <small className="muted">Нові бренди додаються в окремому розділі «Бренди».</small>
         </label>
         <label>
           Артикул
@@ -186,74 +224,21 @@ function ProductEditor({ product, onSave, onClose }) {
         </label>
       </div>
       <h3>Фото товару</h3>
-      <p className="fine">
-        До 8 фото. Перше — головне. Видали демонстраційні фото перед публікацією
-        реального товару. Завантаження: JPG, PNG, WebP або AVIF до 8 МБ.
-      </p>
+      <label>Галерея для завантаження<select value={photoIndex} disabled={uploading || busy} onChange={(e) => { setPhotoColor(Number(e.target.value)); setError(""); setImageUrl(""); }}><option value={-1}>Спільні фото / обкладинка каталогу</option>{p.colors.map((color, index) => <option key={index} value={index}>{color.name} · {(color.images || []).length} фото</option>)}</select></label>
+      <p className="fine">До 8 фото на кожен колір. Перше — головне для вибраного кольору. Якщо галерея кольору порожня, покупець бачить спільні фото. Перше завантажене фото також стає обкладинкою, якщо її ще немає.</p>
       <div className="admin-images">
-        {p.images.map((src, i) => (
-          <div className="admin-image" key={src + i}>
-            <img src={src} alt={`Фото ${i + 1}`} />
-            <button
-              type="button"
-              aria-label={`Видалити фото ${i + 1}`}
-              onClick={() =>
-                setP((p) => ({
-                  ...p,
-                  images: p.images.filter((_, n) => n !== i),
-                }))
-              }
-            >
-              <X size={15} />
-            </button>
-            <button
-              style={{ top: "auto", bottom: 0, fontSize: 11 }}
-              type="button"
-              aria-label={`Зробити фото ${i + 1} головним`}
-              onClick={() =>
-                setP((p) => ({
-                  ...p,
-                  images: [src, ...p.images.filter((_, n) => n !== i)],
-                }))
-              }
-            >
-              №1
-            </button>
-          </div>
-        ))}
+        {photos.map((src, i) => <div className="admin-image" key={src + i}>
+          <img src={src} alt={`Фото ${i + 1}`} />
+          <button type="button" disabled={uploading || busy} aria-label={`Видалити фото ${i + 1}`} onClick={() => setP((current) => updatePhotos(current, photoIndex, (images) => images.filter((_, n) => n !== i)))}><X size={15} /></button>
+          <button style={{ top: "auto", bottom: 0, fontSize: 12 }} type="button" disabled={uploading || busy} aria-label={`Зробити фото ${i + 1} головним`} onClick={() => setP((current) => updatePhotos(current, photoIndex, (images) => [src, ...images.filter((_, n) => n !== i)]))}>№1</button>
+        </div>)}
       </div>
-      <label className="upload-label">
-        <Upload size={22} />
-        {uploading ? "Оптимізуємо фото…" : "Завантажити власне фото"}
-        <input
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/avif"
-          disabled={uploading || p.images.length >= 8}
-          onChange={(e) => upload(e.target.files[0])}
-        />
-      </label>
-      <div className="promo-form">
-        <input
-          aria-label="HTTPS-посилання на фото"
-          placeholder="Або HTTPS-посилання на фото"
-          type="url"
-          value={imageUrl}
-          onChange={(e) => setImageUrl(e.target.value)}
-        />
-        <Button
-          type="button"
-          kind="outline"
-          disabled={!imageUrl || p.images.length >= 8}
-          onClick={() => {
-            if (imageUrl.startsWith("https://")) {
-              setP((p) => ({ ...p, images: [...p.images, imageUrl] }));
-              setImageUrl("");
-            } else setError("Потрібне HTTPS-посилання");
-          }}
-        >
-          Додати
-        </Button>
+      <div className="photo-upload-actions">
+        <label className="upload-label"><Upload size={22} />{uploading ? "Завантажуємо фото…" : "Вибрати фото"}<input type="file" multiple accept="image/jpeg,image/png,image/webp,image/avif" disabled={uploading || busy || photos.length >= 8} onChange={(e) => { uploadFiles(e.target.files); e.target.value = ""; }} /></label>
+        <Button type="button" kind="outline" disabled={uploading || busy || photos.length >= 8} onClick={pasteImage}>Вставити з буфера</Button>
       </div>
+      <p className="fine">Або скопіюй зображення та натисни Ctrl+V / ⌘V у цьому вікні. JPG, PNG, WebP або AVIF до 8 МБ.</p>
+      <div className="promo-form"><input aria-label="HTTPS-посилання на фото" placeholder="Або HTTPS-посилання на фото" type="url" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} /><Button type="button" kind="outline" disabled={uploading || busy || !imageUrl || photos.length >= 8} onClick={() => { if (imageUrl.startsWith("https://")) { setP((current) => updatePhotos(current, photoIndex, (images) => [...images, imageUrl.trim()])); setImageUrl(""); } else setError("Потрібне HTTPS-посилання"); }}>Додати</Button></div>
       <h3>Кольори та розміри</h3>
       <p className="fine">
         Додай кольори й розміри. Прапорець у матриці означає, що конкретний
@@ -421,9 +406,7 @@ function ProductEditor({ product, onSave, onClose }) {
         </p>
       )}
       <div className="admin-save">
-        <Button type="button" kind="outline" onClick={onClose}>
-          Скасувати
-        </Button>
+        {savedMessage && <p className="saved-message" role="status">{savedMessage}</p>}
         <Button type="submit" busy={busy} disabled={uploading}>
           <Save size={17} />
           Зберегти товар
@@ -868,11 +851,50 @@ function Promos({ data, onSave }) {
     </>
   );
 }
+function BrandManager({ data, onSave }) {
+  const [name, setName] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [removing, setRemoving] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function save(event) {
+    event.preventDefault(); setBusy(true); setError("");
+    try {
+      await api("/admin/brands" + (editing ? "/" + encodeURIComponent(editing) : ""), { method: editing ? "PUT" : "POST", body: { name: name.trim() } });
+      await onSave(); setName(""); setEditing(null);
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+  async function remove(brand) {
+    setBusy(true); setError("");
+    try { await api("/admin/brands/" + encodeURIComponent(brand), { method: "DELETE" }); await onSave(); setRemoving(null); }
+    catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+  return <section className="brand-manager">
+    <h2>Бренди магазину</h2>
+    <p className="muted">Доданий бренд одразу з’явиться у списку вибору товару та на сторінці брендів. Перейменування оновлює всі його товари.</p>
+    <form className="brand-form form" onSubmit={save}>
+      <label>{editing ? "Нова назва бренду" : "Назва нового бренду"}<input required maxLength={80} value={name} disabled={busy} onChange={(e) => setName(e.target.value)} placeholder="Наприклад, Prada" /></label>
+      <Button busy={busy} disabled={!name.trim()}>{editing ? "Зберегти назву" : "Додати бренд"}</Button>
+      {editing && <Button type="button" kind="outline" disabled={busy} onClick={() => { setEditing(null); setName(""); }}>Скасувати перейменування</Button>}
+    </form>
+    {error && <p className="form-error" role="alert">{error}</p>}
+    <div className="brand-manager-list">{(data.brands || []).map((brand) => {
+      const count = data.products.filter((p) => p.brand === brand).length;
+      return <div className="brand-manager-row" key={brand}>
+        <div><strong>{brand}</strong><small>{count} товарів, включно з прихованими</small></div>
+        <div className="brand-row-actions">
+          <Button kind="outline" disabled={busy} onClick={() => { setEditing(brand); setName(brand); setError(""); setRemoving(null); }}>Перейменувати</Button>
+          {removing === brand ? <><Button disabled={busy} onClick={() => remove(brand)}>Підтвердити видалення</Button><Button kind="outline" disabled={busy} onClick={() => setRemoving(null)}>Залишити</Button></> : <Button kind="outline" disabled={busy || count > 0} title={count ? "Спочатку зміни бренд у його товарах" : "Видалити порожній бренд"} onClick={() => setRemoving(brand)}>Видалити</Button>}
+        </div>
+      </div>;
+    })}</div>
+  </section>;
+}
 export default function Admin() {
   const { user, t, refresh, setToast } = useShop();
   const route = useRoute();
   const requestedTab = new URLSearchParams(route.split("?")[1] || "").get("tab");
-  const tab = ["overview", "products", "orders", "customers", "promos", "settings", "mail", "newsletter"].includes(requestedTab) ? requestedTab : "products";
+  const tab = ["overview", "products", "brands", "orders", "customers", "promos", "settings", "mail", "newsletter"].includes(requestedTab) ? requestedTab : "products";
   const setTab = (value) => navigate("/admin?tab=" + value);
   const [statusFilter, setStatusFilter] = useState("all");
   const [brandFilter, setBrandFilter] = useState("");
@@ -991,6 +1013,7 @@ export default function Admin() {
         {[
           ["overview", "Огляд"],
           ["products", "Товари"],
+          ["brands", "Бренди"],
           ["orders", "Замовлення"],
           ["customers", "Клієнти"],
           ["promos", "Промокоди"],
@@ -1154,6 +1177,7 @@ export default function Admin() {
           </div>
         </>
       )}
+      {tab === "brands" && <BrandManager data={data} onSave={saved} />}
       {tab === "orders" && (
         <div className="table-scroll">
           <table className="admin-table">
@@ -1304,14 +1328,15 @@ export default function Admin() {
         open={Boolean(edit)}
         onClose={() => setEdit(null)}
         title="Редагування товару"
+        closeOnly
         wide
       >
         {edit && (
           <ProductEditor
             key={edit.id}
             product={edit}
+            brands={data.brands || []}
             onSave={saved}
-            onClose={() => setEdit(null)}
           />
         )}
       </Modal>

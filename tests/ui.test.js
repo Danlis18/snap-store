@@ -10,6 +10,8 @@ import { seedProducts, defaultSettings, brands } from "../server/seed.js";
 import { quoteCart } from "../server/commerce.js";
 import React from "react";
 const products = seedProducts();
+products[0].colors[1].images = ["https://example.com/colour-front.png", "https://example.com/colour-back.png"];
+let savedProduct;
 const state = {
   csrf: "test",
   settings: { ...defaultSettings, devAuth: false, mailReady: false },
@@ -80,7 +82,7 @@ const errors = [];
 win.addEventListener("error", (e) => errors.push(String(e.error || e.message)));
 const fetchMock = async (url, opts = {}) => {
   const route = String(url).replace("/api", ""),
-    body = opts.body ? JSON.parse(opts.body) : {};
+    body = opts.body instanceof FormData ? opts.body : opts.body ? JSON.parse(opts.body) : {};
   let result;
   if (route === "/bootstrap") result = state;
   else if (route === "/products") result = products;
@@ -108,11 +110,14 @@ const fetchMock = async (url, opts = {}) => {
     result = state.recent;
   } else if (route.endsWith("/reviews"))
     result = { reviews: [], canReview: false };
+  else if (route === "/admin/upload") { assert.ok(body.get("image")); result = { url: "/uploads/pasted-photo.webp" }; }
+  else if (route.startsWith("/admin/products/") && opts.method === "PUT") { savedProduct = body; result = body; }
   else if (route === "/orders") result = [];
   else if (route === "/stylist") result = { mode: "rules", looks: [] };
   else if (route === "/admin")
     result = {
       products,
+      brands,
       settings: state.settings,
       orders: [],
       customers: [],
@@ -209,6 +214,24 @@ test("catalog renders, product page selects available size and stages the cart",
   await until(() => state.cart.length === 1);
   assert.equal(state.cart[0].productId, product.id);
 });
+test("colour selection changes product gallery and cart image with legacy fallback", async () => {
+  const product = products[0];
+  const color = product.colors[1];
+  assert.ok(color);
+  color.images = ["https://example.com/colour-front.png", "https://example.com/colour-back.png"];
+  go("/product/" + product.slug);
+  await until(() => win.document.querySelector(".gallery"));
+  win.document.querySelector(`.color-picker button[aria-label="${color.name}"]`).click();
+  await until(() => win.document.querySelector(".main-photo img").getAttribute("src") === color.images[0]);
+  assert.equal(win.document.querySelectorAll(".thumbnails button").length, 2);
+  win.document.querySelectorAll(".thumbnails button")[1].click();
+  await until(() => win.document.querySelector(".main-photo img").getAttribute("src") === color.images[1]);
+  win.document.querySelectorAll(".color-picker button")[0].click();
+  await until(() => win.document.querySelector(".main-photo img").getAttribute("src") === product.images[0]);
+  const variant = product.variants.find((v) => v.color === color.name && v.available);
+  const quote = quoteCart({ items: [{ productId: product.id, color: color.name, size: variant.size, quantity: 1 }], settings: state.settings, product: () => product });
+  assert.equal(quote.lines[0].image, color.images[0]);
+});
 test("checkout, account and admin show honest authentication boundaries", async () => {
   go("/checkout");
   await until(() => text().includes("Оформлення"));
@@ -263,7 +286,7 @@ test("authenticated administrator can open all management panels and product edi
   go("/admin");
   appRoot.render(React.createElement(Storefront, { key: "admin-session" }));
   await until(() => win.document.querySelector(".admin-tabs"));
-  assert.match(text(), /Готовність до запуску/);
+  assert.ok(win.document.querySelector(".admin-toolbar"));
   const clickTab = async (label, check) => {
     [...win.document.querySelectorAll(".admin-tabs button")]
       .find((b) => b.textContent === label)
@@ -284,6 +307,30 @@ test("authenticated administrator can open all management panels and product edi
     win.document.querySelector("dialog[open]").textContent,
     /Кольори та розміри/,
   );
+  const editor = win.document.querySelector("dialog[open]");
+  editor.click();
+  await new Promise((r) => setTimeout(r, 30));
+  assert.ok(editor.open, "Backdrop click must preserve editor");
+  const cancel = new win.Event("cancel", { cancelable: true });
+  editor.dispatchEvent(cancel);
+  assert.ok(cancel.defaultPrevented, "Escape must not dismiss editor");
+  assert.ok(editor.open);
+  assert.ok([...editor.querySelectorAll("select option")].some((o) => o.textContent === brands[0]));
+  assert.match(editor.textContent, /Вставити з буфера/);
+  const gallerySelect = [...editor.querySelectorAll("select")].find((select) => select.options[0]?.textContent.includes("Спільні фото"));
+  gallerySelect.value = "1";
+  gallerySelect.dispatchEvent(new win.Event("change", { bubbles: true }));
+  await until(() => editor.querySelectorAll(".admin-image").length === 2);
+  const paste = new win.Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(paste, "clipboardData", { value: { items: [{ kind: "file", type: "image/png", getAsFile: () => new File(["image bytes"], "pasted.png", { type: "image/png" }) }] } });
+  editor.querySelector("form").dispatchEvent(paste);
+  await until(() => editor.querySelector('img[src="/uploads/pasted-photo.webp"]'));
+  assert.ok(paste.defaultPrevented);
+  editor.querySelector("form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+  await until(() => editor.querySelector(".saved-message"));
+  assert.ok(editor.open, "Saving must preserve editor");
+  assert.ok(savedProduct.colors[1].images.includes("/uploads/pasted-photo.webp"));
+  assert.ok(!savedProduct.images.includes("/uploads/pasted-photo.webp"), "Colour upload must not replace an existing shared cover");
   win.document
     .querySelector('dialog[open] button[aria-label="Закрити / Close"]')
     .click();
@@ -292,6 +339,7 @@ test("authenticated administrator can open all management panels and product edi
   );
   assert.match(text(), /Товар на головному банері/);
   for (const label of [
+    "Бренди",
     "Замовлення",
     "Клієнти",
     "Промокоди",
