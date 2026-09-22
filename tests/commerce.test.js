@@ -1,3 +1,4 @@
+import { priceRange, sizePrice } from "../shared/product-pricing.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { quoteCart, bulkPercent } from "../server/commerce.js";
@@ -136,4 +137,18 @@ test("stylist creates distinct complete available outfits within budget and resp
       .length,
     0,
   );
+});
+
+test("size prices drive line totals, discounts and delivery while ignoring client prices", () => {
+  const sized = { ...p, sizes: ["S", "M", "L"], price: 90000, sizePrices: { S: 100000, M: 200000, L: 300000 }, variants: ["S", "M", "L"].map((size) => ({ size, color: "Black", available: size !== "S" })) };
+  assert.deepEqual(priceRange(sized), { min: 200000, max: 300000 });
+  assert.equal(sizePrice({ ...sized, sizePrices: {} }, "M"), 90000);
+  const q = quoteCart({ items: [{ productId: p.id, color: "Black", size: "M", quantity: 3, price: 1 }, { productId: p.id, color: "Black", size: "L", quantity: 2, price: 1 }], product: () => sized, settings: defaultSettings });
+  assert.equal(q.lines[0].price, 200000);
+  assert.equal(q.lines[1].total, 600000);
+  assert.equal(q.subtotal, 1200000);
+  assert.equal(q.discount, 60000);
+  assert.equal(q.total, 1140000);
+  assert.equal(q.freeShipping, true);
+  assert.equal(q.earn, Math.floor(q.total * defaultSettings.bonusPercent / 100));
 });

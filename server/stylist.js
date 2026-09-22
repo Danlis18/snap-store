@@ -1,3 +1,4 @@
+import { priceRange } from "../shared/product-pricing.js";
 // Deterministic fallback: uses all three answers and returns distinct, in-stock looks.
 export function recommendLooks(all, { style, occasion, budget }) {
   const available = all.filter(
@@ -13,14 +14,14 @@ export function recommendLooks(all, { style, occasion, budget }) {
       value += /tech|run|sport|mesh/i.test(p.nameEn + " " + p.fit) ? 8 : 0;
     if (occasion === "evening") value += isDark(p) ? 6 : 0;
     if (occasion === "university") value += p.type === "hoodie" ? 5 : 0;
-    if (occasion === "daily") value += p.price < budget / 3 ? 3 : 0;
+    if (occasion === "daily") value += priceRange(p).min < budget / 3 ? 3 : 0;
     return value;
   };
   const pools = [["tshirt", "hoodie"], ["trousers"], ["sneakers"]].map(
     (types) =>
       available
         .filter((p) => types.includes(p.type))
-        .sort((a, b) => score(b) - score(a) || a.price - b.price)
+        .sort((a, b) => score(b) - score(a) || priceRange(a).min - priceRange(b).min)
         .slice(0, 40),
   );
   const candidates = [];
@@ -28,7 +29,7 @@ export function recommendLooks(all, { style, occasion, budget }) {
     for (const bottom of pools[1])
       for (const shoes of pools[2]) {
         const products = [top, bottom, shoes];
-        const total = products.reduce((sum, p) => sum + p.price, 0);
+        const total = products.reduce((sum, p) => sum + priceRange(p).min, 0);
         if (total <= budget)
           candidates.push({
             products,

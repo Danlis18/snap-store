@@ -12,7 +12,7 @@ import {
   Search,
 } from "lucide-react";
 import { api, useShop, money, Link, useRoute, navigate } from "../core";
-import { Button, Login, Modal, Empty } from "../components";
+import { Button, Login, Modal, Empty, ProductPrice } from "../components";
 import { createId } from "../ids";
 const statusNames = {
   new: "Нове",
@@ -40,7 +40,7 @@ function ProductEditor({ product, brands, onSave }) {
     [imageUrl, setImageUrl] = useState(""),
     [photoColor, setPhotoColor] = useState(-1),
     [savedMessage, setSavedMessage] = useState(""),
-    [sizesText, setSizesText] = useState(product.sizes.join(", "));
+    [customSize, setCustomSize] = useState("");
   useEffect(() => setSavedMessage(""), [p]);
   const uploadLock = useRef(false);
   const photoIndex = photoColor < p.colors.length ? photoColor : -1;
@@ -62,10 +62,13 @@ function ProductEditor({ product, brands, onSave }) {
   function rebuild(colors, sizes, rename = null) {
     if (uploadLock.current) return;
     if (colors.length !== p.colors.length) setPhotoColor(-1);
+    const order = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
+    sizes = [...sizes].sort((a, b) => order.includes(a) && order.includes(b) ? order.indexOf(a) - order.indexOf(b) : a.localeCompare(b, "uk", { numeric: true }));
     setP((p) => ({
       ...p,
       colors,
       sizes,
+      sizePrices: Object.fromEntries(Object.entries(p.sizePrices || {}).filter(([size]) => sizes.includes(size))),
       variants: colors.flatMap((c) =>
         sizes.map((size) => ({
           color: c.name,
@@ -190,7 +193,7 @@ function ProductEditor({ product, brands, onSave }) {
           </select>
         </label>
         <label>
-          Ціна, грн
+          Базова ціна, грн
           <input
             required
             type="number"
@@ -305,24 +308,19 @@ function ProductEditor({ product, brands, onSave }) {
         <Plus size={17} />
         Додати колір
       </button>
-      <label>
-        Розміри через кому
-        <input
-          value={sizesText}
-          onChange={(e) => setSizesText(e.target.value)}
-          onBlur={() => {
-            const sizes = [
-              ...new Set(
-                sizesText
-                  .split(",")
-                  .map((x) => x.trim())
-                  .filter(Boolean),
-              ),
-            ];
-            if (sizes.length) rebuild(p.colors, sizes);
-          }}
-        />
-      </label>
+      <h3>Розміри та ціни</h3>
+      <p className="fine">Познач розміри та впиши ціну біля кожного. Ціна розміру однакова для всіх кольорів. Порожнє поле використовує базову ціну.</p>
+      <div className="size-price-list">
+        {[...new Set([...(p.category === "clothing" ? ["S", "M", "L", "XL", "XXL"] : p.category === "shoes" ? ["39", "40", "41", "42", "43", "44", "45", "46"] : ["ONE SIZE"]), ...p.sizes])].map((size) => {
+          const enabled = p.sizes.includes(size);
+          return <div className={"size-price-row" + (enabled ? " enabled" : "")} key={size}>
+            <label className="check-label"><input type="checkbox" aria-label={`Розмір ${size}`} checked={enabled} disabled={uploading || busy || (enabled && p.sizes.length === 1)} onChange={(e) => rebuild(p.colors, e.target.checked ? [...p.sizes, size] : p.sizes.filter((value) => value !== size))} /><strong>{size}</strong></label>
+            <label className="size-price-field"><span>Ціна, грн</span><input type="number" min="1" max="1000000" step="0.01" aria-label={`Ціна розміру ${size}, грн`} disabled={!enabled || busy} placeholder={String(p.price / 100)} value={Object.hasOwn(p.sizePrices || {}, size) ? p.sizePrices[size] / 100 : ""} onChange={(e) => { const value = e.target.value; setP((current) => { const prices = { ...current.sizePrices }; if (value === "") delete prices[size]; else prices[size] = Math.round(Number(value) * 100); return { ...current, sizePrices: prices }; }); }} /></label>
+          </div>;
+        })}
+      </div>
+      <div className="promo-form"><input aria-label="Інший розмір" placeholder="Інший розмір: XS, 48…" maxLength={30} value={customSize} onChange={(e) => setCustomSize(e.target.value)} /><Button type="button" kind="outline" disabled={!customSize.trim() || busy || uploading || p.sizes.length >= 30} onClick={() => { const size = customSize.trim().toUpperCase(); if (!p.sizes.includes(size)) rebuild(p.colors, [...p.sizes, size]); setCustomSize(""); }}>Додати розмір</Button></div>
+      <h3>Наявність за кольорами</h3>
       <div className="variant-table">
         {p.variants.map((v, i) => (
           <label key={v.color + "|" + v.size} className="check-label">
@@ -1154,7 +1152,7 @@ export default function Admin() {
                           <small>{p.sku}</small>
                         </span>
                       </td>
-                      <td data-label="Ціна">{money(p.price)}</td>
+                      <td data-label="Ціна"><ProductPrice product={p} /></td>
                       <td>
                         <span className="admin-status">
                           {p.active ? "У каталозі" : "Приховано"}

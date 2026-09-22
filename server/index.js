@@ -1,3 +1,4 @@
+import { sizePrice, priceRange, offerPrices } from "../shared/product-pricing.js";
 import express from "express";
 import helmet from "helmet";
 import multer from "multer";
@@ -706,7 +707,7 @@ app.post("/api/stylist", async (req, res) => {
         id: p.id,
         name: p.name,
         type: p.type,
-        price: p.price,
+        price: priceRange(p).min,
         colors: p.colors.map((c) => c.name),
       }));
       const response = await fetch(process.env.AI_API_URL, {
@@ -748,7 +749,7 @@ app.post("/api/stylist", async (req, res) => {
           (g) =>
             g.some((p) => !p) ||
             new Set(g.map((p) => p.id)).size !== 3 ||
-            g.reduce((s, p) => s + p.price, 0) > input.budget ||
+            g.reduce((s, p) => s + priceRange(p).min, 0) > input.budget ||
             !g.some((p) => ["tshirt", "hoodie"].includes(p.type)) ||
             !g.some((p) => p.type === "trousers") ||
             !g.some((p) => p.type === "sneakers"),
@@ -780,7 +781,7 @@ app.post("/api/stylist", async (req, res) => {
     looks: groups.map((products, i) => ({
       name: ["Everyday energy", "Off-duty edit", "After hours"][i],
       products,
-      total: products.reduce((s, p) => s + p.price, 0),
+      total: products.reduce((s, p) => s + priceRange(p).min, 0),
     })),
     note: groups.length
       ? "3D — стилізована візуалізація силуету, не точна модель товару чи віртуальна примірка."
@@ -872,6 +873,7 @@ const productSchema = z
     category: z.enum(["clothing", "shoes", "accessories"]),
     type: z.enum(["tshirt", "hoodie", "jacket", "trousers", "sneakers", "bag"]),
     price: z.number().int().min(100).max(100000000),
+    sizePrices: z.record(z.string().min(1).max(30), z.number().int().min(100).max(100000000)).default({}),
     oldPrice: z.number().int().positive().nullable(),
     description: z.string().min(10).max(10000),
     descriptionEn: z.string().min(10).max(10000),
@@ -909,10 +911,12 @@ const productSchema = z
     popularity: z.number().int().min(0).max(1000000),
   })
   .superRefine((p, c) => {
-    if (p.oldPrice && p.oldPrice <= p.price)
+    if (Object.keys(p.sizePrices).some((size) => !p.sizes.includes(size)))
+      c.addIssue({ code: "custom", message: "Ціну можна задати лише для вибраного розміру" });
+    if (p.oldPrice && p.sizes.some((size) => p.oldPrice <= sizePrice(p, size)))
       c.addIssue({
         code: "custom",
-        message: "Стара ціна має бути більшою за поточну",
+        message: "Стара ціна має бути більшою за ціну кожного розміру",
       });
     if (
       new Set(p.sizes).size !== p.sizes.length ||
@@ -1226,7 +1230,7 @@ app.get("/{*path}", async (req, res) => {
       noindex = true;
     } else {
       title = `${p.name} — репліка ${p.brand} | SNAP`;
-      description = `${p.name}, репліка. Не оригінал. Ціна ${p.price / 100} грн. Кольори та розміри, доставка Україною.`;
+      description = `${p.name}, репліка. Не оригінал. Ціна ${priceRange(p).min === priceRange(p).max ? "" : "від "}${priceRange(p).min / 100} грн. Кольори та розміри, доставка Україною.`;
       noindex = noindex || p.demo;
       if (!p.demo)
         schema = {
@@ -1239,8 +1243,7 @@ app.get("/{*path}", async (req, res) => {
             i.startsWith("https:") ? i : baseURL() + i,
           ),
           offers: {
-            "@type": "Offer",
-            price: (p.price / 100).toFixed(2),
+            ...offerPrices(p),
             priceCurrency: "UAH",
             availability: p.variants.some((v) => v.available)
               ? "https://schema.org/InStock"
@@ -1308,7 +1311,7 @@ app.get("/{*path}", async (req, res) => {
     "</head>",
     `<link rel="canonical" href="${escapeHTML(baseURL() + urlPath)}"/>${schema ? `<script type="application/ld+json">${JSON.stringify(schema).replace(/</g, "\\u003c")}</script>` : ""}</head>`,
   );
-  const intro = `<main><h1>${escapeHTML(title)}</h1><p>${escapeHTML(description)}</p>${p && status === 200 ? `<p>${escapeHTML(p.description)}</p><p>${p.price / 100} грн</p>` : ""}<nav><a href="/catalog">Каталог</a> · <a href="/brands">Бренди</a> · <a href="/delivery">Доставка</a></nav><noscript>Увімкніть JavaScript для кошика та оформлення замовлення.</noscript></main>`;
+  const intro = `<main><h1>${escapeHTML(title)}</h1><p>${escapeHTML(description)}</p>${p && status === 200 ? `<p>${escapeHTML(p.description)}</p><p>${priceRange(p).min === priceRange(p).max ? "" : "від "}${priceRange(p).min / 100} грн</p>` : ""}<nav><a href="/catalog">Каталог</a> · <a href="/brands">Бренди</a> · <a href="/delivery">Доставка</a></nav><noscript>Увімкніть JavaScript для кошика та оформлення замовлення.</noscript></main>`;
   html = html.replace('<div id="root"></div>', `<div id="root">${intro}</div>`);
   if (vite) html = await vite.transformIndexHtml(req.originalUrl, html);
   res.status(status).type("html").send(html);

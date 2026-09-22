@@ -1,3 +1,4 @@
+import { sizePrice, priceRange } from "../shared/product-pricing.js";
 import React, { useEffect, useRef, useState } from "react";
 import {
   X,
@@ -112,10 +113,17 @@ export function Empty({ icon: Icon = ShoppingBag, title, text, action }) {
     </div>
   );
 }
+export function ProductPrice({ product, size, color, old = false }) {
+  const { t, lang } = useShop();
+  const range = priceRange(product, color);
+  const amount = size ? sizePrice(product, size) : range.min;
+  return <>{!size && range.min !== range.max ? t("від ", "from ") : ""}{money(amount, lang)}{old && product.oldPrice > (size ? amount : range.max) && <> <del>{money(product.oldPrice, lang)}</del></>}</>;
+}
 export function ProductCard({ product: p }) {
   const { wishlist, t, lang, toggleWish, setQuick } = useShop();
   const selected = wishlist?.includes(p.id);
-  const off = p.oldPrice ? Math.round((1 - p.price / p.oldPrice) * 100) : 0;
+  const range = priceRange(p);
+  const off = p.oldPrice && range.min === range.max ? Math.round((1 - range.min / p.oldPrice) * 100) : 0;
   return (
     <article className="product-card">
       <div className="product-visual">
@@ -171,8 +179,7 @@ export function ProductCard({ product: p }) {
           <p>{lang === "uk" ? p.name : p.nameEn}</p>
         </Link>
         <div className="price">
-          {money(p.price, lang)}{" "}
-          {p.oldPrice && <del>{money(p.oldPrice, lang)}</del>}
+          <ProductPrice product={p} old />
         </div>
         <div className="card-bottom">
           <div className="swatches">
@@ -198,7 +205,7 @@ export function ProductGrid({ products }) {
     </div>
   );
 }
-export function VariantPicker({ product: p, onAdded, compact = false, onColorChange }) {
+export function VariantPicker({ product: p, onAdded, compact = false, onColorChange, onSizeChange }) {
   const { t, lang, addToCart, setToast, toggleWish, wishlist } = useShop();
   const [color, setColor] = useState(p.colors[0]?.name),
     [size, setSize] = useState(""),
@@ -242,6 +249,7 @@ export function VariantPicker({ product: p, onAdded, compact = false, onColorCha
               setSize("");
               setError("");
               onColorChange?.(c.name);
+              onSizeChange?.("");
             }}
           >
             <span />
@@ -261,8 +269,10 @@ export function VariantPicker({ product: p, onAdded, compact = false, onColorCha
             onClick={() => {
               setSize(s);
               setError("");
+              onSizeChange?.(s);
             }}
             aria-pressed={size === s}
+            title={money(sizePrice(p, s), lang)}
           >
             {s}
           </button>
@@ -277,7 +287,7 @@ export function VariantPicker({ product: p, onAdded, compact = false, onColorCha
         <Button busy={busy} onClick={add}>
           <ShoppingBag size={18} />
           {t("Додати в кошик", "Add to bag")}
-          <span>{money(p.price, lang)}</span>
+          <span><ProductPrice product={p} size={size} color={color} /></span>
         </Button>
         {!compact && (
           <button
@@ -595,7 +605,7 @@ export function CartDrawer() {
                       </button>
                     </div>
                     <strong className="cart-line-price">
-                      {p ? money(p.price * item.quantity, lang) : "—"}
+                      {p ? money(sizePrice(p, item.size) * item.quantity, lang) : "—"}
                     </strong>
                     </div>
                   </div>

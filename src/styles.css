@@ -4505,3 +4505,13 @@ details[open] > summary > svg {
   .brand-row-actions .button { flex: 1; font-size: .875rem; }
   .admin-save:has(.saved-message) { flex-wrap: wrap; }
 }
+
+.size-price-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.size-price-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid var(--line); padding: 14px; background: var(--surface); }
+.size-price-row.enabled { background: var(--bg); border-color: var(--blue); }
+.size-price-row .check-label { margin: 0; min-width: 64px; }
+.size-price-field { max-width: 150px; min-width: 0; }
+.size-price-field > span { font-size: .8rem; color: var(--muted); }
+.size-price-field input { width: 100%; margin-top: 4px; }
+.size-price-row input:disabled { opacity: .55; }
+@media (max-width: 600px) { .size-price-list { grid-template-columns: 1fr; } .size-price-field { max-width: 180px; } }

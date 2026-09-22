@@ -1,3 +1,4 @@
+import { priceRange } from "../../shared/product-pricing.js";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Sparkles,
@@ -11,7 +12,7 @@ import {
   Box,
 } from "lucide-react";
 import { api, useShop, money, Link } from "../core";
-import { Button } from "../components";
+import { Button, ProductPrice } from "../components";
 function Viewer({ look, paused, setPaused }) {
   const { t } = useShop();
   const host = useRef(),
@@ -529,12 +530,12 @@ export default function Studio() {
                     <Link to={"/product/" + p.slug}>
                       {p.brand} · {lang === "uk" ? p.name : p.nameEn}
                     </Link>
-                    <span>{money(p.price, lang)}</span>
+                    <span><ProductPrice product={p} /></span>
                   </div>
                 ))}
                 <div className="summary-line">
                   <b>{t("Разом", "Total")}</b>
-                  <b>{money(look.total, lang)}</b>
+                  <b>{look.products.some((p) => priceRange(p).min !== priceRange(p).max) ? t("від ", "from ") : ""}{money(look.total, lang)}</b>
                 </div>
                 <p className="fine">
                   {t(

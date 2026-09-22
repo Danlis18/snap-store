@@ -1,3 +1,4 @@
+import { sizePrice, priceRange } from "../shared/product-pricing.js";
 import React, { useEffect, useRef, useState } from "react";
 import { useShop, useRoute, Link } from "./core";
 
@@ -39,10 +40,11 @@ export function AgentTools() {
             id: p.id,
             name: p.name,
             brand: p.brand,
-            price: p.price,
+            price: priceRange(p).min,
+            sizePrices: p.sizePrices || {},
             currency: "UAH",
             demo: p.demo,
-            variants: p.variants,
+            variants: p.variants.map((v) => ({ ...v, price: sizePrice(p, v.size) })),
           }));
       },
     });

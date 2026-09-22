@@ -21,6 +21,7 @@ let child,
   order,
   second;
 const messages = [];
+let shuttingDown = false;
 function client() {
   let cookie = "",
     csrf = "";
@@ -85,6 +86,7 @@ before(async () => {
   // A local SMTP sink: no messages leave the machine.
   smtp = net
     .createServer((socket) => {
+      socket.on("error", (error) => { if (!shuttingDown || error.code !== "ECONNRESET") throw error; });
       socket.setEncoding("utf8");
       socket.write("220 localhost QA SMTP\r\n");
       let buffer = "",
@@ -175,6 +177,7 @@ before(async () => {
   await buyer.login("buyer@snap.test");
 });
 after(async () => {
+  shuttingDown = true;
   db?.close();
   if (child && child.exitCode === null) {
     child.kill("SIGTERM");
@@ -556,4 +559,22 @@ test("brand registry and colour galleries persist behind admin permissions", asy
   const saved = JSON.parse(reopened.prepare("SELECT data FROM products WHERE id=?").get(p.id).data);
   assert.equal(saved.colors[0].images[0], "https://example.com/colour.png");
   reopened.close();
+});
+
+test("size prices persist, validate and remain fixed in completed order snapshots", async () => {
+  const p = { ...structuredClone(products[0]), id: "qa-size-prices", slug: "qa-size-prices", demo: false, active: true, oldPrice: null, price: 100000, sizePrices: { S: 150000, M: 250000 }, sizes: ["S", "M"], colors: [{ name: "Black", hex: "#000000" }], variants: ["S", "M"].map((size) => ({ size, color: "Black", available: true })), images: ["https://example.com/sized.png"] };
+  assert.equal((await admin.call("/admin/products/" + p.id, "PUT", { ...p, sizePrices: { M: -1 } })).status, 400);
+  assert.equal((await admin.call("/admin/products/" + p.id, "PUT", { ...p, sizePrices: { XL: 10000 } })).status, 400);
+  assert.equal((await admin.call("/admin/products/" + p.id, "PUT", { ...p, oldPrice: 200000 })).status, 400);
+  assert.equal((await admin.call("/admin/products/" + p.id, "PUT", p)).status, 200);
+  const saved = (await admin.call("/admin")).data.products.find((item) => item.id === p.id);
+  assert.deepEqual(saved.sizePrices, p.sizePrices);
+  const cart = await buyer.call("/cart", "PUT", { items: [{ productId: p.id, color: "Black", size: "M", quantity: 2, price: 1 }] });
+  assert.equal(cart.data.quote.total, 500000);
+  const placed = await buyer.call("/orders", "POST", { ...payload(), expectedTotal: 500000 });
+  assert.equal(placed.status, 201, JSON.stringify(placed.data));
+  assert.equal(placed.data.quote.lines[0].price, 250000);
+  await admin.call("/admin/products/" + p.id, "PUT", { ...p, sizePrices: { S: 150000, M: 350000 } });
+  const snapshot = JSON.parse(db.prepare("SELECT data FROM orders WHERE id=?").get(placed.data.id).data);
+  assert.equal(snapshot.quote.lines[0].price, 250000);
 });

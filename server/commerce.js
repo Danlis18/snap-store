@@ -1,3 +1,4 @@
+import { sizePrice } from "../shared/product-pricing.js";
 import { productImages } from "../shared/product-media.js";
 export class PublicError extends Error {
   constructor(message, status = 400) {
@@ -53,8 +54,8 @@ export function quoteCart({
       brand: p.brand,
       slug: p.slug,
       image: productImages(p, item.color)[0],
-      price: p.price,
-      total: p.price * item.quantity,
+      price: sizePrice(p, item.size),
+      total: sizePrice(p, item.size) * item.quantity,
       demo: p.demo,
     };
   });

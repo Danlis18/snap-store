@@ -1,3 +1,4 @@
+import { sizePrice, priceRange, offerPrices } from "../shared/product-pricing.js";
 import React, { useEffect, useState, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -38,6 +39,7 @@ import {
   Modal,
   Empty,
   ProductGrid,
+  ProductPrice,
   VariantPicker,
   QuickView,
   Login,
@@ -259,7 +261,7 @@ function Header() {
                       <strong>{p.brand}</strong>
                       <p>{lang === "uk" ? p.name : p.nameEn}</p>
                     </div>
-                    <span>{money(p.price, lang)}</span>
+                    <span><ProductPrice product={p} /></span>
                     <ArrowUpRight size={17} />
                   </Link>
                 ))
@@ -560,7 +562,7 @@ function Catalog({ category = "", brand = "", wishlistOnly = false }) {
         (!onSale || p.oldPrice) &&
         (!selectedBrands.length || selectedBrands.includes(p.brand)) &&
         (!type || p.type === type) &&
-        p.price <= max * 100 &&
+        (size ? sizePrice(p, size) : priceRange(p, color).min) <= max * 100 &&
         (!size || p.variants.some((v) => v.size === size && v.available)) &&
         (!color || p.colors.some((c) => c.name === color)) &&
         (!season || p.season === season) &&
@@ -571,14 +573,14 @@ function Catalog({ category = "", brand = "", wishlistOnly = false }) {
     )
     .sort((a, b) =>
       sort === "low"
-        ? a.price - b.price
+        ? priceRange(a).min - priceRange(b).min
         : sort === "high"
-          ? b.price - a.price
+          ? priceRange(b).min - priceRange(a).min
           : sort === "new"
             ? b.createdAt.localeCompare(a.createdAt)
             : sort === "discount"
-              ? (b.oldPrice ? 1 - b.price / b.oldPrice : 0) -
-                (a.oldPrice ? 1 - a.price / a.oldPrice : 0)
+              ? (b.oldPrice ? 1 - priceRange(b).min / b.oldPrice : 0) -
+                (a.oldPrice ? 1 - priceRange(a).min / a.oldPrice : 0)
               : b.popularity - a.popularity,
     );
   const title = wishlistOnly
@@ -958,6 +960,9 @@ function Product({ slug }) {
   const { products, t, lang, refresh, setToast, recent = [] } = useShop();
   const p = products.find((p) => p.slug === slug);
   const [selectedColor, setSelectedColor] = useState(null);
+  const [selectedSize, setSelectedSize] = useState(null);
+  const chosenSize = selectedSize?.id === p?.id ? selectedSize?.size : "";
+  const chosenColor = selectedColor?.id === p?.id ? selectedColor?.color : p?.colors[0]?.name;
   const gallery = productImages(p, selectedColor && p && selectedColor.id === p.id ? selectedColor.color : p?.colors[0]?.name);
   const [photo, setPhoto] = useState(0),
     [zoom, setZoom] = useState(false),
@@ -1065,13 +1070,12 @@ function Product({ slug }) {
             )}
           </p>
           <div className="detail-price">
-            {money(p.price, lang)}
-            {p.oldPrice && <del>{money(p.oldPrice, lang)}</del>}
+            <ProductPrice product={p} size={chosenSize} color={chosenColor} old />
           </div>
           <p className="fine">
             {t("Код товару", "SKU")}: {p.sku}
           </p>
-          <VariantPicker key={p.id} product={p} onColorChange={(color) => { setSelectedColor({ id: p.id, color }); setPhoto(0); }} />
+          <VariantPicker key={p.id} product={p} onColorChange={(color) => { setSelectedColor({ id: p.id, color }); setPhoto(0); }} onSizeChange={(size) => setSelectedSize({ id: p.id, size })} />
           <div className="detail-perks">
             <p>
               <Truck size={18} />
@@ -1560,7 +1564,7 @@ function App() {
         : `${labels[last] || last} | SNAP`;
     document.title = title;
     const description = p
-      ? `${ctx.lang === "uk" ? p.name : p.nameEn}. ${t("Репліка, не оригінал. Доставка Україною.", "Replica, not original. Delivery within Ukraine.")} ${money(p.price, ctx.lang)}`
+      ? `${ctx.lang === "uk" ? p.name : p.nameEn}. ${t("Репліка, не оригінал. Доставка Україною.", "Replica, not original. Delivery within Ukraine.")} ${priceRange(p).min !== priceRange(p).max ? t("від ", "from ") : ""}${money(priceRange(p).min, ctx.lang)}`
       : t(
           "Чоловічий одяг, взуття та аксесуари SNAP. Репліки, не оригінали. Доставка Україною, оплата при отриманні.",
           "SNAP menswear, footwear and accessories. Replicas, not originals. Delivery within Ukraine, payment on delivery.",
@@ -1596,9 +1600,8 @@ function App() {
           (i) => new URL(i, canonical?.href || location.origin).href,
         ),
         offers: {
-          "@type": "Offer",
+          ...offerPrices(p),
           priceCurrency: "UAH",
-          price: (p.price / 100).toFixed(2),
           availability: p.variants.some((v) => v.available)
             ? "https://schema.org/InStock"
             : "https://schema.org/OutOfStock",

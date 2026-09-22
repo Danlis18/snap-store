@@ -10,6 +10,8 @@ import { seedProducts, defaultSettings, brands } from "../server/seed.js";
 import { quoteCart } from "../server/commerce.js";
 import React from "react";
 const products = seedProducts();
+products[0].sizePrices = { M: 234500 };
+products[0].oldPrice = null;
 products[0].colors[1].images = ["https://example.com/colour-front.png", "https://example.com/colour-back.png"];
 let savedProduct;
 const state = {
@@ -205,6 +207,7 @@ test("catalog renders, product page selects available size and stages the cart",
   );
   assert.ok(sizeButtons.length);
   sizeButtons[0].click();
+  await until(() => win.document.querySelector(".detail-price").textContent.replace(/\s/g, "").includes("2345"));
   const add = [...win.document.querySelectorAll("button")].find((b) =>
     b.textContent.includes("Додати в кошик"),
   );
@@ -317,6 +320,12 @@ test("authenticated administrator can open all management panels and product edi
   assert.ok(editor.open);
   assert.ok([...editor.querySelectorAll("select option")].some((o) => o.textContent === brands[0]));
   assert.match(editor.textContent, /Вставити з буфера/);
+  for (const size of ["S", "M", "L", "XL", "XXL"]) assert.ok(editor.querySelector(`input[aria-label="Розмір ${size}"]`));
+  const sizePriceInput = editor.querySelector('input[aria-label="Ціна розміру M, грн"]');
+  assert.equal(sizePriceInput.value, "2345");
+  const xlCheck = editor.querySelector('input[aria-label="Розмір XXL"]');
+  if (!xlCheck.checked) xlCheck.click();
+  await until(() => !editor.querySelector('input[aria-label="Ціна розміру XXL, грн"]').disabled);
   const gallerySelect = [...editor.querySelectorAll("select")].find((select) => select.options[0]?.textContent.includes("Спільні фото"));
   gallerySelect.value = "1";
   gallerySelect.dispatchEvent(new win.Event("change", { bubbles: true }));
@@ -329,6 +338,8 @@ test("authenticated administrator can open all management panels and product edi
   editor.querySelector("form").dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
   await until(() => editor.querySelector(".saved-message"));
   assert.ok(editor.open, "Saving must preserve editor");
+  assert.equal(savedProduct.sizePrices.M, 234500);
+  assert.ok(savedProduct.sizes.includes("XXL"));
   assert.ok(savedProduct.colors[1].images.includes("/uploads/pasted-photo.webp"));
   assert.ok(!savedProduct.images.includes("/uploads/pasted-photo.webp"), "Colour upload must not replace an existing shared cover");
   win.document

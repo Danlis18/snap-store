@@ -1,3 +1,4 @@
+import { sizePrice } from "../../shared/product-pricing.js";
 import { productImages } from "../../shared/product-media.js";
 import React, { useState, useEffect, useRef } from "react";
 import { ArrowRight, Check, ShieldCheck, Gift } from "lucide-react";
@@ -420,7 +421,7 @@ export default function Checkout() {
                     {i.color} / {i.size} × {i.quantity}
                   </small>
                 </div>
-                <b>{p && money(p.price * i.quantity, lang)}</b>
+                <b>{p && money(sizePrice(p, i.size) * i.quantity, lang)}</b>
               </div>
             );
           })}

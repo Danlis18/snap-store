@@ -1,3 +1,4 @@
+import { sizePrice } from "../shared/product-pricing.js";
 import React, {
   createContext,
   useContext,
@@ -146,8 +147,8 @@ export function Provider({ children }) {
           name: "add_to_cart",
           data: {
             currency: "UAH",
-            value: (p.price * quantity) / 100,
-            items: [{ item_id: p.id, price: p.price / 100, quantity }],
+            value: (sizePrice(p, size) * quantity) / 100,
+            items: [{ item_id: p.id, price: sizePrice(p, size) / 100, quantity }],
           },
         },
       }),
